@@ -39,3 +39,35 @@ def test_build_message_reply_event_includes_reply_context_when_present():
     )
     assert env["event"] == "message.reply"
     assert env["payload"]["message"]["context"]["reply_to_message_id"] == "up-1"
+
+
+def test_extract_nonce_returns_none_when_payload_is_not_dict():
+    assert extract_nonce({"payload": "bad"}) is None
+
+
+def test_extract_nonce_returns_none_when_payload_data_is_not_dict():
+    assert extract_nonce({"payload": {"data": "bad"}}) is None
+
+
+def test_extract_nonce_reads_nonce_from_nested_data():
+    assert extract_nonce({"payload": {"data": {"nonce": "abc123"}}}) == "abc123"
+
+
+def test_is_hello_ok_returns_false_when_payload_is_not_dict():
+    assert (
+        is_hello_ok(
+            {"type": "res", "requestId": "req-1", "payload": "bad"},
+            "req-1",
+        )
+        is False
+    )
+
+
+def test_is_hello_ok_returns_false_for_wrong_payload_type():
+    assert (
+        is_hello_ok(
+            {"type": "res", "requestId": "req-1", "payload": {"type": "hello-no"}},
+            "req-1",
+        )
+        is False
+    )

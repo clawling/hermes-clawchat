@@ -33,20 +33,27 @@ def compute_client_sign(client_id: str, nonce: str, token: str) -> str:
 
 
 def extract_nonce(frame: dict[str, Any]) -> str | None:
-    payload = frame.get("payload") or {}
+    payload = frame.get("payload")
+    if not isinstance(payload, dict):
+        return None
     if isinstance(payload.get("nonce"), str):
         return payload["nonce"]
-    data = payload.get("data") or {}
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
     if isinstance(data.get("nonce"), str):
         return data["nonce"]
     return None
 
 
 def is_hello_ok(frame: dict[str, Any], expected_request_id: str) -> bool:
+    payload = frame.get("payload")
+    if not isinstance(payload, dict):
+        return False
     return (
         frame.get("type") == "res"
         and frame.get("requestId") == expected_request_id
-        and (frame.get("payload") or {}).get("type") == "hello-ok"
+        and payload.get("type") == "hello-ok"
     )
 
 
