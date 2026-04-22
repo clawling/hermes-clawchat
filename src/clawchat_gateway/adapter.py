@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlparse
 
 from gateway.config import Platform
 from gateway.platforms.base import (
@@ -17,6 +19,7 @@ from gateway.platforms.base import (
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.connection import ClawChatConnection, ConnectionState
 from clawchat_gateway.inbound import InboundMessage, parse_inbound_message
+from clawchat_gateway.media_runtime import infer_media_kind_from_mime
 from clawchat_gateway.protocol import (
     build_message_add_event,
     build_message_created_event,
@@ -34,6 +37,7 @@ class _ActiveRun:
     chat_id: str
     chat_type: str
     message_id: str
+    started_order: int
     last_text: str = ""
     reply_to_message_id: str | None = None
 
@@ -65,7 +69,9 @@ class ClawChatAdapter(BasePlatformAdapter):
             on_message=self._on_message,
             on_state_change=self._on_state_change,
         )
-        self._active_runs: dict[str, _ActiveRun] = {}
+        self._active_runs_by_id: dict[str, _ActiveRun] = {}
+        self._active_chat_runs: dict[str, str] = {}
+        self._run_counter = 0
 
     async def connect(self) -> bool:
         await self._connection.start()
@@ -90,6 +96,9 @@ class ClawChatAdapter(BasePlatformAdapter):
         await self._handle_inbound(inbound)
 
     async def _handle_inbound(self, inbound: InboundMessage) -> None:
+        reply_to_message_id, reply_to_text = self._extract_reply_fields(
+            inbound.reply_preview
+        )
         source = self.build_source(
             chat_id=inbound.chat_id,
             sender_id=inbound.sender_id,
@@ -105,6 +114,8 @@ class ClawChatAdapter(BasePlatformAdapter):
                 "clawchat_raw": inbound.raw_message,
             },
             media_urls=inbound.media_urls,
+            reply_to_message_id=reply_to_message_id,
+            reply_to_text=reply_to_text,
         )
         await self.handle_message(event)
 
@@ -135,9 +146,11 @@ class ClawChatAdapter(BasePlatformAdapter):
             chat_id=chat_id,
             chat_type=chat_type,
             message_id=message_id,
+            started_order=self._next_run_order(),
             reply_to_message_id=reply_to,
         )
-        self._active_runs[chat_id] = run
+        self._active_runs_by_id[message_id] = run
+        self._active_chat_runs[chat_id] = message_id
 
         await self._connection.send_frame(
             build_message_created_event(
@@ -165,13 +178,13 @@ class ClawChatAdapter(BasePlatformAdapter):
         message_id: str,
         content: str,
     ) -> SendResult:
-        run = self._active_runs.get(chat_id)
+        run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
-            return SendResult(success=False, error="no active run for chat_id")
+            return SendResult(success=False, error="no active run for message_id")
 
         full_text, delta = compute_delta(run.last_text, content)
         if not delta:
-            return SendResult(success=True, message_id=message_id)
+            return SendResult(success=True, message_id=run.message_id)
 
         await self._connection.send_frame(
             build_message_add_event(
@@ -183,12 +196,18 @@ class ClawChatAdapter(BasePlatformAdapter):
             )
         )
         run.last_text = full_text
-        return SendResult(success=True, message_id=message_id or run.message_id)
+        return SendResult(success=True, message_id=run.message_id)
 
-    async def on_run_complete(self, chat_id: str, final_text: str) -> None:
-        run = self._active_runs.pop(chat_id, None)
+    async def on_run_complete(
+        self,
+        chat_id: str,
+        final_text: str,
+        message_id: str | None = None,
+    ) -> None:
+        run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
             return
+        self._discard_run(run)
 
         full_text, delta = compute_delta(run.last_text, final_text)
         if delta:
@@ -243,6 +262,45 @@ class ClawChatAdapter(BasePlatformAdapter):
             return kwargs["chat_type"]
         return "direct"
 
+    def _next_run_order(self) -> int:
+        self._run_counter += 1
+        return self._run_counter
+
+    def _resolve_active_run(
+        self,
+        *,
+        chat_id: str,
+        message_id: str | None = None,
+    ) -> _ActiveRun | None:
+        if message_id:
+            run = self._active_runs_by_id.get(message_id)
+            if run is None or run.chat_id != chat_id:
+                return None
+            return run
+        latest_message_id = self._active_chat_runs.get(chat_id)
+        if latest_message_id is None:
+            return None
+        return self._active_runs_by_id.get(latest_message_id)
+
+    def _discard_run(self, run: _ActiveRun) -> None:
+        self._active_runs_by_id.pop(run.message_id, None)
+        latest_message_id = self._active_chat_runs.get(run.chat_id)
+        if latest_message_id != run.message_id:
+            return
+        replacement = self._find_latest_run_for_chat(run.chat_id)
+        if replacement is None:
+            self._active_chat_runs.pop(run.chat_id, None)
+            return
+        self._active_chat_runs[run.chat_id] = replacement.message_id
+
+    def _find_latest_run_for_chat(self, chat_id: str) -> _ActiveRun | None:
+        candidates = [
+            run for run in self._active_runs_by_id.values() if run.chat_id == chat_id
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda run: run.started_order)
+
     def _should_use_static_mode(self, fragments: list[dict[str, Any]]) -> bool:
         has_media = any(fragment.get("kind") != "text" for fragment in fragments)
         return self._clawchat_config.reply_mode != "stream" or has_media
@@ -267,9 +325,112 @@ class ClawChatAdapter(BasePlatformAdapter):
         if isinstance(raw_kw_urls, list):
             media_urls.extend(url for url in raw_kw_urls if isinstance(url, str))
 
-        for media_url in media_urls:
-            fragments.append({"kind": "image", "url": media_url})
+        for index, media_url in enumerate(media_urls):
+            fragments.append(
+                {
+                    "kind": self._infer_media_kind(
+                        media_url=media_url,
+                        index=index,
+                        metadata=metadata,
+                        kwargs=merged_kwargs,
+                    ),
+                    "url": media_url,
+                }
+            )
 
         if not fragments:
             fragments.append({"kind": "text", "text": ""})
         return fragments
+
+    def _infer_media_kind(
+        self,
+        *,
+        media_url: str,
+        index: int,
+        metadata: Any,
+        kwargs: dict[str, Any],
+    ) -> str:
+        mime_hint = self._extract_media_mime_hint(
+            media_url=media_url,
+            index=index,
+            metadata=metadata,
+            kwargs=kwargs,
+        )
+        if mime_hint:
+            return infer_media_kind_from_mime(mime_hint)
+
+        path = urlparse(media_url).path.lower()
+        if path.endswith(
+            (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".heic")
+        ):
+            return "image"
+        if path.endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")):
+            return "audio"
+        if path.endswith((".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v")):
+            return "video"
+        return "file"
+
+    def _extract_media_mime_hint(
+        self,
+        *,
+        media_url: str,
+        index: int,
+        metadata: Any,
+        kwargs: dict[str, Any],
+    ) -> str | None:
+        for carrier in (metadata, kwargs):
+            hint = self._lookup_media_mime_hint(carrier, media_url, index)
+            if hint:
+                return hint
+        return None
+
+    def _lookup_media_mime_hint(
+        self,
+        carrier: Any,
+        media_url: str,
+        index: int,
+    ) -> str | None:
+        if not isinstance(carrier, dict):
+            return None
+        for key in ("media_content_types", "media_mime_types"):
+            raw = carrier.get(key)
+            if isinstance(raw, Mapping):
+                hint = raw.get(media_url)
+                if isinstance(hint, str):
+                    return hint
+            if isinstance(raw, list) and index < len(raw) and isinstance(raw[index], str):
+                return raw[index]
+        return None
+
+    def _extract_reply_fields(
+        self,
+        reply_preview: dict[str, Any] | None,
+    ) -> tuple[str | None, str | None]:
+        if not isinstance(reply_preview, dict):
+            return None, None
+
+        nested_preview = reply_preview.get("reply_preview")
+        preview = nested_preview if isinstance(nested_preview, dict) else reply_preview
+
+        reply_to_message_id = None
+        for key in ("id", "reply_to_msg_id"):
+            value = preview.get(key)
+            if isinstance(value, str) and value:
+                reply_to_message_id = value
+                break
+            value = reply_preview.get(key)
+            if isinstance(value, str) and value:
+                reply_to_message_id = value
+                break
+
+        fragments = preview.get("fragments")
+        text_parts: list[str] = []
+        if isinstance(fragments, list):
+            for fragment in fragments:
+                if not isinstance(fragment, dict):
+                    continue
+                if fragment.get("kind") == "text" and isinstance(fragment.get("text"), str):
+                    text_parts.append(fragment["text"])
+
+        reply_to_text = "".join(text_parts) or None
+        return reply_to_message_id, reply_to_text
