@@ -6,6 +6,7 @@ import asyncio
 import enum
 import logging
 import random
+from collections import deque
 from typing import Any, Awaitable, Callable
 
 try:
@@ -30,6 +31,7 @@ HANDSHAKE_TIMEOUT_SECONDS = 10.0
 SEND_QUEUE_MAX = 128
 CLIENT_ID = "hermes-agent"
 CLIENT_VERSION = "hermes-clawchat/0.1"
+BACKOFF_RESET_AFTER_SECONDS = 5.0
 
 
 async def _ws_connect(url: str, **kwargs: Any) -> Any:
@@ -69,7 +71,7 @@ class ClawChatConnection:
         self._read_task: asyncio.Task[None] | None = None
         self._hello_wait: asyncio.Future[bool] | None = None
         self._pending_connect_id: str | None = None
-        self._send_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SEND_QUEUE_MAX)
+        self._send_queue: deque[str] = deque()
 
     async def start(self) -> None:
         if self._supervisor_task is not None:
@@ -103,17 +105,13 @@ class ClawChatConnection:
     async def send_frame(self, frame: dict[str, Any]) -> None:
         text = encode_frame(frame)
         if self._state == ConnectionState.READY and self._ws is not None:
-            await self._ws.send(text)
-            return
-        try:
-            self._send_queue.put_nowait(text)
-        except asyncio.QueueFull:
-            logger.warning("clawchat send queue full, dropping oldest frame")
             try:
-                self._send_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
-            self._send_queue.put_nowait(text)
+                await self._ws.send(text)
+            except Exception:
+                self._enqueue_text(text, front=True)
+                raise
+            return
+        self._enqueue_text(text)
 
     @property
     def is_ready(self) -> bool:
@@ -138,9 +136,10 @@ class ClawChatConnection:
         while not self._stopping:
             try:
                 await self._set_state(ConnectionState.CONNECTING)
-                await self._run_one_connection()
-                delay_seconds = self._cfg.reconnect_initial_delay_ms / 1000.0
-                retries = 0
+                stable_session = await self._run_one_connection()
+                if stable_session:
+                    delay_seconds = self._cfg.reconnect_initial_delay_ms / 1000.0
+                    retries = 0
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -156,7 +155,7 @@ class ClawChatConnection:
             delay_seconds = min(delay_seconds * 2.0, max_delay_seconds)
         await self._set_state(ConnectionState.CLOSED)
 
-    async def _run_one_connection(self) -> None:
+    async def _run_one_connection(self) -> bool:
         ws = await _ws_connect(
             self._cfg.websocket_url,
             additional_headers={"Authorization": f"Bearer {self._cfg.token}"},
@@ -165,6 +164,7 @@ class ClawChatConnection:
         )
         self._ws = ws
         self._pending_connect_id = None
+        ready_started_at: float | None = None
         await self._set_state(ConnectionState.HANDSHAKING)
 
         loop = asyncio.get_running_loop()
@@ -173,6 +173,7 @@ class ClawChatConnection:
         try:
             await asyncio.wait_for(self._hello_wait, timeout=HANDSHAKE_TIMEOUT_SECONDS)
             await self._set_state(ConnectionState.READY)
+            ready_started_at = loop.time()
             await self._flush_send_queue(ws)
             await self._read_task
         finally:
@@ -183,14 +184,15 @@ class ClawChatConnection:
             except Exception:  # noqa: BLE001
                 pass
             self._ws = None
+        if ready_started_at is None:
+            return False
+        return (loop.time() - ready_started_at) >= BACKOFF_RESET_AFTER_SECONDS
 
     async def _flush_send_queue(self, ws: Any) -> None:
-        while True:
-            try:
-                text = self._send_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                return
+        while self._send_queue:
+            text = self._send_queue[0]
             await ws.send(text)
+            self._send_queue.popleft()
 
     async def _read_loop(self, ws: Any) -> None:
         async for raw in ws:
@@ -238,3 +240,15 @@ class ClawChatConnection:
         if self._pending_connect_id and is_hello_ok(frame, self._pending_connect_id):
             if self._hello_wait is not None and not self._hello_wait.done():
                 self._hello_wait.set_result(True)
+
+    def _enqueue_text(self, text: str, *, front: bool = False) -> None:
+        if len(self._send_queue) >= SEND_QUEUE_MAX:
+            logger.warning("clawchat send queue full, dropping oldest frame")
+            if front:
+                self._send_queue.pop()
+            else:
+                self._send_queue.popleft()
+        if front:
+            self._send_queue.appendleft(text)
+        else:
+            self._send_queue.append(text)
