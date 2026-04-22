@@ -211,6 +211,51 @@ async def test_queued_outbound_frame_flushes_after_ready(monkeypatch):
         await conn.stop()
 
 
+async def test_ready_transition_preserves_backlog_ordering(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    await conn.start()
+    try:
+        await conn.send_frame({"type": "event", "id": "a", "event": "message.reply"})
+        req = await _complete_handshake(srv)
+        assert req["method"] == "connect"
+
+        real_send = conn._ws.send
+        allow_first_flush = asyncio.Event()
+        first_flush_started = asyncio.Event()
+        first_send = True
+
+        async def blocked_send(text: str):
+            nonlocal first_send
+            frame = conn._send_queue[0] if conn._send_queue else None
+            if first_send and frame == text:
+                first_send = False
+                first_flush_started.set()
+                await allow_first_flush.wait()
+            await real_send(text)
+
+        monkeypatch.setattr(conn._ws, "send", blocked_send)
+
+        await _wait_until(lambda: conn.is_ready)
+        await first_flush_started.wait()
+
+        await conn.send_frame({"type": "event", "id": "b", "event": "message.reply"})
+        allow_first_flush.set()
+
+        first = await srv.read_client_frame(timeout=1.0)
+        second = await srv.read_client_frame(timeout=1.0)
+
+        assert first["id"] == "a"
+        assert second["id"] == "b"
+    finally:
+        await conn.stop()
+
+
 async def test_queued_frame_survives_failed_flush_and_reconnect(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)

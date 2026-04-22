@@ -72,6 +72,7 @@ class ClawChatConnection:
         self._hello_wait: asyncio.Future[bool] | None = None
         self._pending_connect_id: str | None = None
         self._send_queue: deque[str] = deque()
+        self._flushing_send_queue = False
 
     async def start(self) -> None:
         if self._supervisor_task is not None:
@@ -104,7 +105,12 @@ class ClawChatConnection:
 
     async def send_frame(self, frame: dict[str, Any]) -> None:
         text = encode_frame(frame)
-        if self._state == ConnectionState.READY and self._ws is not None:
+        if (
+            self._state == ConnectionState.READY
+            and self._ws is not None
+            and not self._send_queue
+            and not self._flushing_send_queue
+        ):
             try:
                 await self._ws.send(text)
             except Exception:
@@ -189,10 +195,14 @@ class ClawChatConnection:
         return (loop.time() - ready_started_at) >= BACKOFF_RESET_AFTER_SECONDS
 
     async def _flush_send_queue(self, ws: Any) -> None:
-        while self._send_queue:
-            text = self._send_queue[0]
-            await ws.send(text)
-            self._send_queue.popleft()
+        self._flushing_send_queue = True
+        try:
+            while self._send_queue:
+                text = self._send_queue[0]
+                await ws.send(text)
+                self._send_queue.popleft()
+        finally:
+            self._flushing_send_queue = False
 
     async def _read_loop(self, ws: Any) -> None:
         async for raw in ws:
