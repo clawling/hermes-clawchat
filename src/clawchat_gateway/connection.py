@@ -209,7 +209,11 @@ class ClawChatConnection:
         if ftype == "res" and self._hello_wait is not None and not self._hello_wait.done():
             await self._maybe_finish_handshake(frame)
             return
-        if ftype == "event" and frame.get("event") == "message.send":
+        if (
+            self._state == ConnectionState.READY
+            and ftype == "event"
+            and frame.get("event") == "message.send"
+        ):
             await self._on_message(frame)
             return
 
