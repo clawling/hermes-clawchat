@@ -18,12 +18,27 @@ class InboundMessage:
     media_urls: list[str] = field(default_factory=list)
 
 
+def _as_dict(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None
+
+
 def parse_inbound_message(
     envelope: dict[str, Any], config: ClawChatConfig
 ) -> InboundMessage | None:
-    payload = envelope.get("payload") or {}
-    message = payload.get("message") or {}
-    context = message.get("context") or {}
+    payload = _as_dict(envelope.get("payload") or {})
+    if payload is None:
+        return None
+
+    message = _as_dict(payload.get("message") or {})
+    if message is None:
+        return None
+
+    context = _as_dict(message.get("context") or {})
+    if context is None:
+        return None
+
     chat_type = envelope.get("chat_type") or "direct"
 
     if chat_type == "group" and config.group_mode == "mention":
@@ -56,7 +71,10 @@ def parse_inbound_message(
             else:
                 text_parts.append(f"[{label}]({fragment['url']})")
 
-    sender = envelope.get("sender") or {}
+    sender = _as_dict(envelope.get("sender") or {})
+    if sender is None:
+        return None
+
     return InboundMessage(
         chat_id=envelope.get("chat_id") or "",
         chat_type=chat_type,
@@ -64,6 +82,6 @@ def parse_inbound_message(
         sender_name=sender.get("nick_name") or "",
         text="\n".join(part for part in text_parts if part),
         raw_message=envelope,
-        reply_preview=context.get("reply"),
+        reply_preview=_as_dict(context.get("reply")),
         media_urls=media_urls,
     )
