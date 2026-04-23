@@ -1,4 +1,6 @@
 import asyncio
+import logging
+from uuid import UUID
 
 import pytest
 
@@ -50,10 +52,10 @@ async def _complete_handshake(srv: FakeClawChatServer) -> dict[str, object]:
     req = await srv.read_client_frame(timeout=1.0)
     srv.enqueue_from_server(
         {
-            "type": "res",
-            "id": "r1",
-            "requestId": req["id"],
-            "payload": {"type": "hello-ok"},
+            "version": "2",
+            "event": "hello-ok",
+            "trace_id": req["trace_id"],
+            "payload": {},
         }
     )
     return req
@@ -78,10 +80,46 @@ async def test_handshake_reaches_ready(monkeypatch):
     await conn.start()
     try:
         req = await _complete_handshake(srv)
-        assert req["method"] == "connect"
+        assert req["event"] == "connect"
         await _wait_until(lambda: conn.is_ready)
         assert conn.is_ready is True
         assert "ready" in [s.value for s in seen]
+    finally:
+        await conn.stop()
+
+
+async def test_handshake_accepts_realtime_frames_without_type(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    await conn.start()
+    try:
+        await _wait_for_connect(srv)
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "connect.challenge",
+                "trace_id": "challenge",
+                "payload": {"nonce": "N"},
+            }
+        )
+        req = await srv.read_client_frame(timeout=1.0)
+        assert req["event"] == "connect"
+        assert req["trace_id"].startswith("trace-")
+        UUID(req["trace_id"].removeprefix("trace-"))
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "hello-ok",
+                "trace_id": req["trace_id"],
+                "payload": {},
+            }
+        )
+        await _wait_until(lambda: conn.is_ready)
     finally:
         await conn.stop()
 
@@ -110,7 +148,7 @@ async def test_message_send_before_ready_is_ignored(monkeypatch):
             }
         )
         req = await srv.read_client_frame(timeout=1.0)
-        assert req["method"] == "connect"
+        assert req["event"] == "connect"
 
         srv.enqueue_from_server(
             {
@@ -141,6 +179,25 @@ async def test_bearer_auth_header_is_sent_on_connect(monkeypatch):
         await _wait_until(lambda: bool(srv.connect_calls))
         headers = srv.connect_calls[0]["kwargs"].get("additional_headers") or {}
         assert headers["Authorization"] == "Bearer tok-123"
+    finally:
+        await conn.stop()
+
+
+async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(_cfg(token="tok-123"), on_message=on_message)
+    await conn.start()
+    try:
+        await _wait_until(lambda: bool(srv.connect_calls))
+        kwargs = srv.connect_calls[0]["kwargs"]
+        headers = kwargs.get("additional_headers") or {}
+        assert headers["X-Device-Id"] == "openclaw-clawchat"
+        assert kwargs["subprotocols"] == ["clawchat.v1", "bearer.tok-123"]
     finally:
         await conn.stop()
 
@@ -176,14 +233,14 @@ async def test_wrong_request_id_times_out_without_ready(monkeypatch):
         req = await srv.read_client_frame(timeout=1.0)
         srv.enqueue_from_server(
             {
-                "type": "res",
-                "id": "r1",
-                "requestId": "wrong-id",
-                "payload": {"type": "hello-ok"},
+                "version": "2",
+                "event": "hello-fail",
+                "trace_id": "wrong-id",
+                "payload": {"reason": "wrong id"},
             }
         )
         await _wait_until(lambda: ConnectionState.CLOSED in seen_states, timeout=0.3)
-        assert req["method"] == "connect"
+        assert req["event"] == "connect"
         assert conn.is_ready is False
         assert ConnectionState.READY not in seen_states
     finally:
@@ -202,13 +259,58 @@ async def test_queued_outbound_frame_flushes_after_ready(monkeypatch):
     try:
         await conn.send_frame({"type": "event", "id": "m1", "event": "message.reply"})
         req = await _complete_handshake(srv)
-        assert req["method"] == "connect"
+        assert req["event"] == "connect"
         await _wait_until(lambda: conn.is_ready)
         queued = await srv.read_client_frame(timeout=1.0)
         assert queued["id"] == "m1"
         assert queued["event"] == "message.reply"
     finally:
         await conn.stop()
+
+
+async def test_connection_logs_receive_dispatch_and_send(monkeypatch, caplog):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    seen_messages = []
+
+    async def on_message(frame):
+        seen_messages.append(frame)
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    with caplog.at_level(logging.INFO, logger="clawchat_gateway.connection"):
+        await conn.start()
+        try:
+            req = await _complete_handshake(srv)
+            assert req["event"] == "connect"
+            await _wait_until(lambda: conn.is_ready)
+            await conn.send_frame({"type": "event", "id": "out-1", "event": "message.reply"})
+            await srv.read_client_frame(timeout=1.0)
+            srv.enqueue_from_server(
+                {
+                    "type": "event",
+                    "id": "m1",
+                    "event": "message.send",
+                    "chat_id": "u1",
+                    "sender": {"id": "u1"},
+                    "payload": {
+                        "message": {
+                            "context": {},
+                            "fragments": [{"kind": "text", "text": "hi"}],
+                        }
+                    },
+                }
+            )
+            await _wait_until(lambda: len(seen_messages) == 1)
+        finally:
+            await conn.stop()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("clawchat ws recv event=message.send" in message for message in messages)
+    assert any("clawchat ws dispatch message.send chat_id=u1" in message for message in messages)
+    assert any("payload_keys=['message']" in message for message in messages)
+    assert any("message_keys=['context', 'fragments']" in message for message in messages)
+    assert any("body_type=NoneType" in message for message in messages)
+    assert any("clawchat ws send event=message.reply id=out-1" in message for message in messages)
 
 
 async def test_ready_transition_preserves_backlog_ordering(monkeypatch):
@@ -223,7 +325,7 @@ async def test_ready_transition_preserves_backlog_ordering(monkeypatch):
     try:
         await conn.send_frame({"type": "event", "id": "a", "event": "message.reply"})
         req = await _complete_handshake(srv)
-        assert req["method"] == "connect"
+        assert req["event"] == "connect"
 
         real_send = conn._ws.send
         allow_first_flush = asyncio.Event()
@@ -291,16 +393,16 @@ async def test_queued_frame_survives_failed_flush_and_reconnect(monkeypatch):
         monkeypatch.setattr(conn._ws, "send", flaky_send)
         srv.enqueue_from_server(
             {
-                "type": "res",
-                "id": "r1",
-                "requestId": req["id"],
-                "payload": {"type": "hello-ok"},
+                "version": "2",
+                "event": "hello-ok",
+                "trace_id": req["trace_id"],
+                "payload": {},
             }
         )
 
         await _wait_until(lambda: len(srv.connect_calls) >= 2, timeout=0.3)
         req2 = await _complete_handshake(srv)
-        assert req2["method"] == "connect"
+        assert req2["event"] == "connect"
         await _wait_until(lambda: conn.is_ready)
         replayed = await srv.read_client_frame(timeout=1.0)
         assert replayed["id"] == "queued-1"
@@ -332,7 +434,7 @@ async def test_ready_send_failure_requeues_for_next_connection(monkeypatch):
         await srv.disconnect()
         await _wait_until(lambda: len(srv.connect_calls) >= 2, timeout=0.3)
         req2 = await _complete_handshake(srv)
-        assert req2["method"] == "connect"
+        assert req2["event"] == "connect"
         await _wait_until(lambda: conn.is_ready)
         replayed = await srv.read_client_frame(timeout=1.0)
         assert replayed["id"] == "direct-1"

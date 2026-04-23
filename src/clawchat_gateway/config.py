@@ -16,7 +16,7 @@ class ClawChatConfig:
     base_url: str = ""
     token: str = ""
     user_id: str = ""
-    reply_mode: str = "static"
+    reply_mode: str = "stream"
     group_mode: str = "mention"
     stream_flush_interval_ms: int = 250
     stream_min_chunk_chars: int = 40
@@ -30,6 +30,9 @@ class ClawChatConfig:
     ack_timeout_ms: int = 15000
     ack_auto_resend_on_timeout: bool = False
     media_local_roots: tuple[str, ...] = field(default_factory=tuple)
+    media_download_dir: str = "/tmp/clawchat-media"
+    show_tools_output: bool = False
+    show_think_output: bool = False
 
     @classmethod
     def from_platform_config(cls, platform_config: Any) -> "ClawChatConfig":
@@ -41,7 +44,7 @@ class ClawChatConfig:
             base_url=_get_alias(extra, "base_url", "baseUrl", ""),
             token=extra.get("token") or "",
             user_id=_get_alias(extra, "user_id", "userId", ""),
-            reply_mode=_get_alias(extra, "reply_mode", "replyMode", "static"),
+            reply_mode=_get_alias(extra, "reply_mode", "replyMode", "stream"),
             group_mode=_get_alias(extra, "group_mode", "groupMode", "mention"),
             stream_flush_interval_ms=_get_alias(
                 stream, "flush_interval_ms", "flushIntervalMs", 250
@@ -75,4 +78,13 @@ class ClawChatConfig:
                 extra, "ack_auto_resend_on_timeout", "ackAutoResendOnTimeout", False
             ),
             media_local_roots=tuple(media_local_roots),
+            media_download_dir=_get_alias(
+                extra, "media_download_dir", "mediaDownloadDir", "/tmp/clawchat-media"
+            ),
+            show_tools_output=bool(
+                _get_alias(extra, "show_tools_output", "showToolsOutput", False)
+            ),
+            show_think_output=bool(
+                _get_alias(extra, "show_think_output", "showThinkOutput", False)
+            ),
         )

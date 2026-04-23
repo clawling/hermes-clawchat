@@ -15,6 +15,8 @@ from typing import Any, List, Optional
 
 
 class _Platform(enum.Enum):
+    CLAWLING = "clawling"
+    QQBOT = "qqbot"
     CLAWCHAT = "clawchat"
 
 
@@ -28,8 +30,8 @@ class _SessionSource:
     platform: Any
     chat_id: str
     user_id: str = ""
-    sender_id: str = ""
     chat_name: str = ""
+    chat_type: str = "dm"
     thread_id: Optional[str] = None
 
 
@@ -65,13 +67,21 @@ class _BasePlatformAdapter:
         self.platform = platform
         self.handled: List[_MessageEvent] = []
 
-    def build_source(self, *, chat_id: str, sender_id: str, chat_name: str = "", **kw):
+    def build_source(
+        self,
+        *,
+        chat_id: str,
+        user_id: str = "",
+        chat_name: str = "",
+        chat_type: str = "dm",
+        **kw,
+    ):
         return _SessionSource(
             platform=self.platform,
             chat_id=chat_id,
-            user_id=sender_id,
-            sender_id=sender_id,
+            user_id=user_id,
             chat_name=chat_name or chat_id,
+            chat_type=chat_type,
         )
 
     async def handle_message(self, event: _MessageEvent) -> None:

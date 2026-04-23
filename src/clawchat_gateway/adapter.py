@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -19,17 +21,58 @@ from gateway.platforms.base import (
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.connection import ClawChatConnection, ConnectionState
 from clawchat_gateway.inbound import InboundMessage, parse_inbound_message
-from clawchat_gateway.media_runtime import infer_media_kind_from_mime
+from clawchat_gateway.media_runtime import (
+    download_inbound_media,
+    infer_media_kind_from_mime,
+    upload_outbound_media,
+)
 from clawchat_gateway.protocol import (
     build_message_add_event,
     build_message_created_event,
     build_message_done_event,
     build_message_reply_event,
+    build_typing_update_event,
     new_frame_id,
 )
 from clawchat_gateway.stream_buffer import compute_delta
 
 logger = logging.getLogger("clawchat_gateway.adapter")
+
+TYPING_REFRESH_SECONDS = 10.0
+
+_THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+_THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
+_TOOL_TAG_BLOCK_RE = re.compile(
+    r"<(?:tool|tools|tool_call|tool_result|function_call|function_result)\b[^>]*>"
+    r".*?</(?:tool|tools|tool_call|tool_result|function_call|function_result)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_TOOL_TAG_OPEN_RE = re.compile(
+    r"<(?:tool|tools|tool_call|tool_result|function_call|function_result)\b[^>]*>.*\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+_TOOL_FENCE_BLOCK_RE = re.compile(
+    r"```(?:tool|tools|tool_call|tool_result|function_call|function_result)[^\n`]*\n.*?```",
+    re.IGNORECASE | re.DOTALL,
+)
+_TOOL_FENCE_OPEN_RE = re.compile(
+    r"```(?:tool|tools|tool_call|tool_result|function_call|function_result)[^\n`]*\n.*\Z",
+    re.IGNORECASE | re.DOTALL,
+)
+_TOOL_PROGRESS_LINE_RE = re.compile(
+    r"^\s*(?:[^\w\s`]{1,4}\s*)?[A-Za-z_][\w.-]*(?:\([^)]*\))?"
+    r"(?:\.\.\.|: \"|\n)",
+)
+_ACTIVATION_INTENT_RE = re.compile(
+    r"(clawchat|claw\s*chat|激活码|激活|activate|activation|invite\s*code)",
+    re.IGNORECASE,
+)
+_CLAWCHAT_SKILL_PROMPT = (
+    "The user may be activating or configuring ClawChat. Use the installed "
+    "clawchat skill instructions. If an activation code is present, run "
+    "`python -m clawchat_gateway.activate CODE`, then tell the user to restart "
+    "Hermes gateway. If no code is present, ask for the ClawChat activation code."
+)
 
 
 @dataclass
@@ -40,6 +83,7 @@ class _ActiveRun:
     started_order: int
     last_text: str = ""
     reply_to_message_id: str | None = None
+    sequence: int = 0
 
 
 def check_clawchat_requirements(platform_config: Any) -> bool:
@@ -71,6 +115,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         )
         self._active_runs_by_id: dict[str, _ActiveRun] = {}
         self._active_chat_runs: dict[str, str] = {}
+        self._typing_state: dict[str, tuple[bool, float]] = {}
         self._run_counter = 0
 
     async def connect(self) -> bool:
@@ -84,7 +129,44 @@ class ClawChatAdapter(BasePlatformAdapter):
         return {"name": chat_id, "type": "direct", "chat_id": chat_id}
 
     async def send_typing(self, chat_id: str, metadata: Any = None) -> None:
-        return None
+        chat_type = self._resolve_chat_type(metadata, {})
+        if self._should_skip_typing(chat_id, active=True):
+            logger.debug("clawchat typing active skipped chat_id=%s reason=already_active", chat_id)
+            return
+        await self._connection.send_frame(
+            build_typing_update_event(
+                chat_id=chat_id,
+                chat_type=chat_type,
+                active=True,
+            )
+        )
+        logger.info("clawchat typing active sent chat_id=%s chat_type=%s", chat_id, chat_type)
+
+    async def stop_typing(self, chat_id: str, metadata: Any = None) -> None:
+        chat_type = self._resolve_chat_type(metadata, {})
+        if self._should_skip_typing(chat_id, active=False):
+            logger.debug("clawchat typing inactive skipped chat_id=%s reason=already_inactive", chat_id)
+            return
+        await self._connection.send_frame(
+            build_typing_update_event(
+                chat_id=chat_id,
+                chat_type=chat_type,
+                active=False,
+            )
+        )
+        logger.info("clawchat typing inactive sent chat_id=%s chat_type=%s", chat_id, chat_type)
+
+    def _should_skip_typing(self, chat_id: str, *, active: bool) -> bool:
+        now = time.monotonic()
+        current = self._typing_state.get(chat_id)
+        if current is not None:
+            was_active, last_sent_at = current
+            if active and was_active and now - last_sent_at < TYPING_REFRESH_SECONDS:
+                return True
+            if not active and not was_active:
+                return True
+        self._typing_state[chat_id] = (active, now)
+        return False
 
     async def _on_state_change(self, state: ConnectionState) -> None:
         logger.info("clawchat state -> %s", state.value)
@@ -92,7 +174,20 @@ class ClawChatAdapter(BasePlatformAdapter):
     async def _on_message(self, frame: dict[str, Any]) -> None:
         inbound = parse_inbound_message(frame, self._clawchat_config)
         if inbound is None:
+            logger.warning(
+                "clawchat inbound dropped event=%s chat_id=%s reason=parse_or_filter_failed",
+                frame.get("event"),
+                frame.get("chat_id"),
+            )
             return
+        logger.info(
+            "clawchat inbound parsed chat_id=%s chat_type=%s sender_id=%s text_len=%d media=%d",
+            inbound.chat_id,
+            inbound.chat_type,
+            inbound.sender_id,
+            len(inbound.text),
+            len(inbound.media_urls),
+        )
         await self._handle_inbound(inbound)
 
     async def _handle_inbound(self, inbound: InboundMessage) -> None:
@@ -101,9 +196,13 @@ class ClawChatAdapter(BasePlatformAdapter):
         )
         source = self.build_source(
             chat_id=inbound.chat_id,
-            sender_id=inbound.sender_id,
+            user_id=inbound.sender_id,
             chat_name=inbound.chat_id,
+            chat_type=self._map_source_chat_type(inbound.chat_type),
         )
+        downloaded_media = await self._download_inbound_media(inbound)
+        media_urls = [str(item.local_path) for item in downloaded_media]
+        media_types = [item.mime for item in downloaded_media]
         event = MessageEvent(
             text=inbound.text,
             message_type=MessageType.TEXT,
@@ -113,11 +212,56 @@ class ClawChatAdapter(BasePlatformAdapter):
                 "clawchat_reply": inbound.reply_preview,
                 "clawchat_raw": inbound.raw_message,
             },
-            media_urls=inbound.media_urls,
+            media_urls=media_urls,
+            media_types=media_types,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
         )
+        if self._should_attach_activation_skill(inbound.text):
+            event.auto_skill = "clawchat"
+            event.channel_prompt = _CLAWCHAT_SKILL_PROMPT
+        logger.info(
+            "clawchat dispatch to hermes chat_id=%s user_id=%s text_len=%d media=%d downloaded=%d reply_to=%s",
+            inbound.chat_id,
+            inbound.sender_id,
+            len(inbound.text),
+            len(inbound.media_urls),
+            len(media_urls),
+            reply_to_message_id,
+        )
         await self.handle_message(event)
+        logger.info(
+            "clawchat dispatch accepted by hermes chat_id=%s user_id=%s",
+            inbound.chat_id,
+            inbound.sender_id,
+        )
+
+    def _should_attach_activation_skill(self, text: str) -> bool:
+        if not text:
+            return False
+        normalized = text.strip()
+        if not _ACTIVATION_INTENT_RE.search(normalized):
+            return False
+        return True
+
+    async def _download_inbound_media(self, inbound: InboundMessage) -> list[Any]:
+        if not inbound.media_urls:
+            return []
+        downloaded = await download_inbound_media(
+            inbound.media_urls,
+            base_url=self._clawchat_config.base_url,
+            websocket_url=self._clawchat_config.websocket_url,
+            token=self._clawchat_config.token,
+            download_dir=self._clawchat_config.media_download_dir,
+        )
+        logger.info(
+            "clawchat inbound media downloaded chat_id=%s requested=%d downloaded=%d types=%s",
+            inbound.chat_id,
+            len(inbound.media_urls),
+            len(downloaded),
+            [item.mime for item in downloaded],
+        )
+        return downloaded
 
     async def send(
         self,
@@ -128,17 +272,37 @@ class ClawChatAdapter(BasePlatformAdapter):
         **kwargs: Any,
     ) -> SendResult:
         chat_type = self._resolve_chat_type(metadata, kwargs)
-        fragments = self._build_fragments(content, metadata, kwargs)
+        if self._should_suppress_tool_progress(content or ""):
+            logger.info("clawchat tool progress suppressed chat_id=%s text_len=%d", chat_id, len(content or ""))
+            return SendResult(success=True)
+        visible_content = self._filter_output_content(content or "")
+        fragments = await self._build_fragments(visible_content, metadata, kwargs)
         message_id = new_frame_id("msg")
+        logger.info(
+            "clawchat send start chat_id=%s chat_type=%s mode=%s text_len=%d fragments=%d reply_to=%s",
+            chat_id,
+            chat_type,
+            self._clawchat_config.reply_mode,
+            len(visible_content),
+            len(fragments),
+            reply_to,
+        )
 
         if self._should_use_static_mode(fragments):
             await self._connection.send_frame(
                 build_message_reply_event(
                     chat_id=chat_id,
                     chat_type=chat_type,
+                    message_id=message_id,
                     fragments=fragments,
                     reply_to_message_id=reply_to,
                 )
+            )
+            logger.info(
+                "clawchat send static reply queued chat_id=%s message_id=%s fragments=%d",
+                chat_id,
+                message_id,
+                len(fragments),
             )
             return SendResult(success=True, message_id=message_id)
 
@@ -159,8 +323,9 @@ class ClawChatAdapter(BasePlatformAdapter):
                 message_id=message_id,
             )
         )
-        if content:
-            run.last_text, delta = compute_delta(run.last_text, content)
+        if visible_content:
+            run.last_text, delta = compute_delta(run.last_text, visible_content)
+            run.sequence += 1
             await self._connection.send_frame(
                 build_message_add_event(
                     chat_id=chat_id,
@@ -168,7 +333,14 @@ class ClawChatAdapter(BasePlatformAdapter):
                     message_id=message_id,
                     full_text=run.last_text,
                     delta=delta,
+                    sequence=run.sequence,
                 )
+            )
+            logger.info(
+                "clawchat stream delta queued chat_id=%s message_id=%s delta_len=%d",
+                chat_id,
+                message_id,
+                len(delta),
             )
         return SendResult(success=True, message_id=message_id)
 
@@ -180,9 +352,19 @@ class ClawChatAdapter(BasePlatformAdapter):
     ) -> SendResult:
         run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
+            logger.warning(
+                "clawchat edit skipped chat_id=%s message_id=%s reason=no_active_run",
+                chat_id,
+                message_id,
+            )
             return SendResult(success=False, error="no active run for message_id")
 
-        full_text, delta = compute_delta(run.last_text, content)
+        if self._should_suppress_tool_progress(content or ""):
+            logger.info("clawchat tool progress edit suppressed chat_id=%s message_id=%s text_len=%d", chat_id, message_id, len(content or ""))
+            return SendResult(success=True, message_id=run.message_id)
+
+        visible_content = self._filter_output_content(content or "")
+        full_text, delta = compute_delta(run.last_text, visible_content)
         if not delta:
             return SendResult(success=True, message_id=run.message_id)
 
@@ -193,8 +375,10 @@ class ClawChatAdapter(BasePlatformAdapter):
                 message_id=run.message_id,
                 full_text=full_text,
                 delta=delta,
+                sequence=run.sequence + 1,
             )
         )
+        run.sequence += 1
         run.last_text = full_text
         return SendResult(success=True, message_id=run.message_id)
 
@@ -206,11 +390,24 @@ class ClawChatAdapter(BasePlatformAdapter):
     ) -> None:
         run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
+            logger.warning(
+                "clawchat run complete skipped chat_id=%s message_id=%s reason=no_active_run",
+                chat_id,
+                message_id,
+            )
             return
         self._discard_run(run)
+        logger.info(
+            "clawchat run complete chat_id=%s message_id=%s final_len=%d",
+            chat_id,
+            run.message_id,
+            len(self._filter_output_content(final_text or "")),
+        )
 
-        full_text, delta = compute_delta(run.last_text, final_text)
+        visible_final_text = self._filter_output_content(final_text or "")
+        full_text, delta = compute_delta(run.last_text, visible_final_text)
         if delta:
+            run.sequence += 1
             await self._connection.send_frame(
                 build_message_add_event(
                     chat_id=chat_id,
@@ -218,6 +415,7 @@ class ClawChatAdapter(BasePlatformAdapter):
                     message_id=run.message_id,
                     full_text=full_text,
                     delta=delta,
+                    sequence=run.sequence,
                 )
             )
             run.last_text = full_text
@@ -227,15 +425,23 @@ class ClawChatAdapter(BasePlatformAdapter):
                 chat_id=chat_id,
                 chat_type=run.chat_type,
                 message_id=run.message_id,
+                fragments=await self._build_fragments(run.last_text),
+                sequence=run.sequence,
             )
         )
         await self._connection.send_frame(
             build_message_reply_event(
                 chat_id=chat_id,
                 chat_type=run.chat_type,
-                fragments=self._build_fragments(run.last_text),
+                message_id=run.message_id,
+                fragments=await self._build_fragments(run.last_text),
                 reply_to_message_id=run.reply_to_message_id,
             )
+        )
+        logger.info(
+            "clawchat stream done queued chat_id=%s message_id=%s",
+            chat_id,
+            run.message_id,
         )
 
     async def send_image(
@@ -255,12 +461,34 @@ class ClawChatAdapter(BasePlatformAdapter):
             metadata=merged_metadata,
         )
 
+    async def send_image_file(
+        self,
+        chat_id: str,
+        image_path: str,
+        caption: str | None = None,
+        reply_to: str | None = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        merged_metadata = dict(kwargs.get("metadata") or {})
+        merged_metadata["media_urls"] = [image_path]
+        return await self.send(
+            chat_id=chat_id,
+            content=caption or "",
+            reply_to=reply_to,
+            metadata=merged_metadata,
+        )
+
     def _resolve_chat_type(self, metadata: Any, kwargs: dict[str, Any]) -> str:
         if isinstance(metadata, dict) and isinstance(metadata.get("chat_type"), str):
             return metadata["chat_type"]
         if isinstance(kwargs.get("chat_type"), str):
             return kwargs["chat_type"]
         return "direct"
+
+    def _map_source_chat_type(self, chat_type: str) -> str:
+        if chat_type == "direct":
+            return "dm"
+        return chat_type
 
     def _next_run_order(self) -> int:
         self._run_counter += 1
@@ -305,7 +533,27 @@ class ClawChatAdapter(BasePlatformAdapter):
         has_media = any(fragment.get("kind") != "text" for fragment in fragments)
         return self._clawchat_config.reply_mode != "stream" or has_media
 
-    def _build_fragments(
+    def _filter_output_content(self, content: str) -> str:
+        filtered = content
+        if not self._clawchat_config.show_think_output:
+            filtered = _THINK_BLOCK_RE.sub("", filtered)
+            filtered = _THINK_OPEN_RE.sub("", filtered)
+        if not self._clawchat_config.show_tools_output:
+            filtered = _TOOL_FENCE_BLOCK_RE.sub("", filtered)
+            filtered = _TOOL_FENCE_OPEN_RE.sub("", filtered)
+            filtered = _TOOL_TAG_BLOCK_RE.sub("", filtered)
+            filtered = _TOOL_TAG_OPEN_RE.sub("", filtered)
+        return filtered
+
+    def _should_suppress_tool_progress(self, content: str) -> bool:
+        if self._clawchat_config.show_tools_output:
+            return False
+        lines = [line for line in content.splitlines() if line.strip()]
+        if not lines:
+            return False
+        return all(_TOOL_PROGRESS_LINE_RE.match(line) for line in lines)
+
+    async def _build_fragments(
         self,
         content: str = "",
         metadata: Any = None,
@@ -325,22 +573,34 @@ class ClawChatAdapter(BasePlatformAdapter):
         if isinstance(raw_kw_urls, list):
             media_urls.extend(url for url in raw_kw_urls if isinstance(url, str))
 
-        for index, media_url in enumerate(media_urls):
-            fragments.append(
-                {
-                    "kind": self._infer_media_kind(
-                        media_url=media_url,
-                        index=index,
-                        metadata=metadata,
-                        kwargs=merged_kwargs,
-                    ),
-                    "url": media_url,
-                }
-            )
+        uploaded_fragments = await self._build_media_fragments(
+            media_urls=media_urls,
+            metadata=metadata,
+            kwargs=merged_kwargs,
+        )
+        fragments.extend(uploaded_fragments)
 
         if not fragments:
             fragments.append({"kind": "text", "text": ""})
         return fragments
+
+    async def _build_media_fragments(
+        self,
+        *,
+        media_urls: list[str],
+        metadata: Any,
+        kwargs: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        if not media_urls:
+            return []
+
+        return await upload_outbound_media(
+            media_urls,
+            base_url=self._clawchat_config.base_url,
+            websocket_url=self._clawchat_config.websocket_url,
+            token=self._clawchat_config.token,
+            media_local_roots=self._clawchat_config.media_local_roots,
+        )
 
     def _infer_media_kind(
         self,
@@ -401,6 +661,7 @@ class ClawChatAdapter(BasePlatformAdapter):
             if isinstance(raw, list) and index < len(raw) and isinstance(raw[index], str):
                 return raw[index]
         return None
+
 
     def _extract_reply_fields(
         self,

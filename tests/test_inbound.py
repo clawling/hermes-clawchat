@@ -137,6 +137,71 @@ def test_mixed_text_and_media_fragments_render_placeholders_and_media_urls():
     ]
 
 
+def test_message_body_string_is_parsed_as_text():
+    cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
+    env = {
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message": {
+                "body": "hello from body",
+                "context": {},
+                "streaming": False,
+            }
+        },
+    }
+
+    inbound = parse_inbound_message(env, cfg)
+
+    assert inbound is not None
+    assert inbound.text == "hello from body"
+
+
+def test_message_body_dict_text_is_parsed_as_text():
+    cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
+    env = {
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message": {
+                "body": {"text": "hello from dict body"},
+                "context": {},
+            }
+        },
+    }
+
+    inbound = parse_inbound_message(env, cfg)
+
+    assert inbound is not None
+    assert inbound.text == "hello from dict body"
+
+
+def test_message_body_list_accepts_type_content_fragments():
+    cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
+    env = {
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message": {
+                "body": [
+                    {"type": "text", "content": "hello"},
+                    {"type": "image", "url": "https://cdn.example/img.png", "name": "img.png"},
+                ],
+                "context": {},
+            }
+        },
+    }
+
+    inbound = parse_inbound_message(env, cfg)
+
+    assert inbound is not None
+    assert inbound.text == "hello\n![img.png](https://cdn.example/img.png)"
+    assert inbound.media_urls == ["https://cdn.example/img.png"]
+
+
 def test_parse_inbound_message_returns_none_for_truthy_non_mapping_payload():
     cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
 

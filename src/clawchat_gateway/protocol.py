@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import itertools
 import json
+import time
+import uuid
 from typing import Any
-
-_counter = itertools.count(1)
 
 
 def new_frame_id(prefix: str = "req") -> str:
-    return f"{prefix}-{next(_counter)}"
+    return f"{prefix}-{uuid.uuid4()}"
 
 
 def encode_frame(frame: dict[str, Any]) -> str:
@@ -47,6 +46,8 @@ def extract_nonce(frame: dict[str, Any]) -> str | None:
 
 
 def is_hello_ok(frame: dict[str, Any], expected_request_id: str) -> bool:
+    if frame.get("event") == "hello-ok":
+        return True
     payload = frame.get("payload")
     if not isinstance(payload, dict):
         return False
@@ -66,16 +67,14 @@ def build_connect_request(
     sign: str,
 ) -> dict[str, Any]:
     return {
-        "type": "req",
-        "id": frame_id,
-        "method": "connect",
-        "params": {
-            "auth": {"token": token},
-            "client": {
-                "id": client_id,
-                "version": client_version,
-                "sign": sign,
-            },
+        "version": "2",
+        "event": "connect",
+        "trace_id": frame_id,
+        "payload": {
+            "token": token,
+            "client_id": client_id,
+            "client_version": client_version,
+            "sign": sign,
         },
     }
 
@@ -88,9 +87,9 @@ def _message_envelope(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "type": "event",
-        "id": new_frame_id("evt"),
+        "version": "2",
         "event": event,
+        "trace_id": new_frame_id("trace"),
         "chat_id": chat_id,
         "chat_type": chat_type,
         "payload": payload,
@@ -107,7 +106,7 @@ def build_message_created_event(
         "message.created",
         chat_id=chat_id,
         chat_type=chat_type,
-        payload={"message": {"id": message_id}},
+        payload={"message_id": message_id},
     )
 
 
@@ -118,16 +117,26 @@ def build_message_add_event(
     message_id: str,
     full_text: str,
     delta: str,
+    sequence: int,
 ) -> dict[str, Any]:
+    now_ms = int(time.time() * 1000)
     return _message_envelope(
         "message.add",
         chat_id=chat_id,
         chat_type=chat_type,
         payload={
-            "message": {
-                "id": message_id,
-                "fragments": [{"kind": "text", "text": full_text, "delta": delta}],
-            }
+            "message_id": message_id,
+            "sequence": sequence,
+            "mutation": {"type": "append", "target_fragment_index": None},
+            "fragments": [{"kind": "text", "text": full_text, "delta": delta}],
+            "streaming": {
+                "status": "streaming",
+                "sequence": sequence,
+                "mutation_policy": "append_text_only",
+                "started_at": None,
+                "completed_at": None,
+            },
+            "added_at": now_ms,
         },
     )
 
@@ -137,12 +146,26 @@ def build_message_done_event(
     chat_id: str,
     chat_type: str,
     message_id: str,
+    fragments: list[dict[str, Any]],
+    sequence: int,
 ) -> dict[str, Any]:
+    now_ms = int(time.time() * 1000)
     return _message_envelope(
         "message.done",
         chat_id=chat_id,
         chat_type=chat_type,
-        payload={"message": {"id": message_id}},
+        payload={
+            "message_id": message_id,
+            "fragments": fragments,
+            "streaming": {
+                "status": "done",
+                "sequence": sequence,
+                "mutation_policy": "append_text_only",
+                "started_at": None,
+                "completed_at": now_ms,
+            },
+            "completed_at": now_ms,
+        },
     )
 
 
@@ -150,15 +173,42 @@ def build_message_reply_event(
     *,
     chat_id: str,
     chat_type: str,
+    message_id: str,
     fragments: list[dict[str, Any]],
     reply_to_message_id: str | None = None,
 ) -> dict[str, Any]:
-    context = {}
+    context: dict[str, Any] = {"mentions": [], "reply": None}
     if reply_to_message_id:
-        context["reply_to_message_id"] = reply_to_message_id
+        context["reply"] = {
+            "reply_to_msg_id": reply_to_message_id,
+            "reply_preview": None,
+        }
     return _message_envelope(
         "message.reply",
         chat_id=chat_id,
         chat_type=chat_type,
-        payload={"message": {"fragments": fragments, "context": context}},
+        payload={
+            "message_id": message_id,
+            "message_mode": "normal",
+            "message": {
+                "body": {"fragments": fragments},
+                "context": context,
+            },
+        },
     )
+
+
+def build_typing_update_event(
+    *,
+    chat_id: str,
+    chat_type: str,
+    active: bool,
+) -> dict[str, Any]:
+    return {
+        "version": "2",
+        "event": "typing.update",
+        "trace_id": new_frame_id("trace"),
+        "chat_id": chat_id,
+        "chat_type": chat_type,
+        "payload": {"is_typing": active},
+    }

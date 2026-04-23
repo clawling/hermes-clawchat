@@ -8,6 +8,7 @@ import logging
 import random
 from collections import deque
 from typing import Any, Awaitable, Callable
+from urllib.parse import urlparse
 
 try:
     from websockets.asyncio.client import connect as _ws_connect_impl
@@ -31,6 +32,7 @@ HANDSHAKE_TIMEOUT_SECONDS = 10.0
 SEND_QUEUE_MAX = 128
 CLIENT_ID = "hermes-agent"
 CLIENT_VERSION = "hermes-clawchat/0.1"
+DEVICE_ID = "openclaw-clawchat"
 BACKOFF_RESET_AFTER_SECONDS = 5.0
 
 
@@ -105,6 +107,8 @@ class ClawChatConnection:
 
     async def send_frame(self, frame: dict[str, Any]) -> None:
         text = encode_frame(frame)
+        event = str(frame.get("event") or frame.get("type") or "unknown")
+        frame_id = str(frame.get("id") or frame.get("trace_id") or "")
         if (
             self._state == ConnectionState.READY
             and self._ws is not None
@@ -112,12 +116,31 @@ class ClawChatConnection:
             and not self._flushing_send_queue
         ):
             try:
+                logger.info(
+                    "clawchat ws send event=%s id=%s bytes=%d",
+                    event,
+                    frame_id,
+                    len(text),
+                )
                 await self._ws.send(text)
             except Exception:
                 self._enqueue_text(text, front=True)
+                logger.warning(
+                    "clawchat ws send failed; queued event=%s id=%s queue_size=%d",
+                    event,
+                    frame_id,
+                    len(self._send_queue),
+                )
                 raise
             return
         self._enqueue_text(text)
+        logger.info(
+            "clawchat ws queued event=%s id=%s state=%s queue_size=%d",
+            event,
+            frame_id,
+            self._state.value,
+            len(self._send_queue),
+        )
 
     @property
     def is_ready(self) -> bool:
@@ -162,23 +185,35 @@ class ClawChatConnection:
         await self._set_state(ConnectionState.CLOSED)
 
     async def _run_one_connection(self) -> bool:
+        logger.info(
+            "clawchat ws connecting url=%s heartbeat_ms=%d/%d",
+            self._cfg.websocket_url,
+            self._cfg.heartbeat_interval_ms,
+            self._cfg.heartbeat_timeout_ms,
+        )
         ws = await _ws_connect(
             self._cfg.websocket_url,
-            additional_headers={"Authorization": f"Bearer {self._cfg.token}"},
+            additional_headers={
+                "Authorization": f"Bearer {self._cfg.token}",
+                "X-Device-Id": DEVICE_ID,
+            },
+            subprotocols=["clawchat.v1", f"bearer.{self._cfg.token}"],
             ping_interval=self._cfg.heartbeat_interval_ms / 1000.0,
             ping_timeout=self._cfg.heartbeat_timeout_ms / 1000.0,
         )
         self._ws = ws
         self._pending_connect_id = None
         ready_started_at: float | None = None
-        await self._set_state(ConnectionState.HANDSHAKING)
+        realtime_protocol = self._uses_realtime_subprotocol()
+        await self._set_state(ConnectionState.READY if realtime_protocol else ConnectionState.HANDSHAKING)
 
         loop = asyncio.get_running_loop()
         self._hello_wait = loop.create_future()
         self._read_task = asyncio.create_task(self._read_loop(ws), name="clawchat-read")
         try:
-            await asyncio.wait_for(self._hello_wait, timeout=HANDSHAKE_TIMEOUT_SECONDS)
-            await self._set_state(ConnectionState.READY)
+            if not realtime_protocol:
+                await asyncio.wait_for(self._hello_wait, timeout=HANDSHAKE_TIMEOUT_SECONDS)
+                await self._set_state(ConnectionState.READY)
             ready_started_at = loop.time()
             await self._flush_send_queue(ws)
             await self._read_task
@@ -194,11 +229,27 @@ class ClawChatConnection:
             return False
         return (loop.time() - ready_started_at) >= BACKOFF_RESET_AFTER_SECONDS
 
+    def _uses_realtime_subprotocol(self) -> bool:
+        return urlparse(self._cfg.websocket_url).path.rstrip("/") == "/v1/ws"
+
     async def _flush_send_queue(self, ws: Any) -> None:
         self._flushing_send_queue = True
         try:
             while self._send_queue:
                 text = self._send_queue[0]
+                try:
+                    frame = decode_frame(text)
+                    event = str(frame.get("event") or frame.get("type") or "unknown")
+                    frame_id = str(frame.get("id") or frame.get("trace_id") or "")
+                except (TypeError, ValueError):
+                    event = "malformed"
+                    frame_id = ""
+                logger.info(
+                    "clawchat ws flush queued event=%s id=%s remaining=%d",
+                    event,
+                    frame_id,
+                    len(self._send_queue),
+                )
                 await ws.send(text)
                 self._send_queue.popleft()
         finally:
@@ -211,30 +262,61 @@ class ClawChatConnection:
             except (TypeError, ValueError) as exc:
                 logger.warning("clawchat dropped malformed frame: %s", exc)
                 continue
+            logger.info(
+                "clawchat ws recv event=%s type=%s id=%s state=%s bytes=%d",
+                frame.get("event"),
+                frame.get("type"),
+                frame.get("id") or frame.get("trace_id"),
+                self._state.value,
+                len(raw) if isinstance(raw, (str, bytes, bytearray)) else 0,
+            )
             await self._dispatch_inbound(frame)
 
     async def _dispatch_inbound(self, frame: dict[str, Any]) -> None:
         ftype = frame.get("type")
-        if ftype == "event" and frame.get("event") == "connect.challenge":
+        if (ftype in (None, "event")) and frame.get("event") == "connect.challenge":
             await self._handle_challenge(frame)
             return
-        if ftype == "res" and self._hello_wait is not None and not self._hello_wait.done():
+        if (
+            (ftype == "res" or frame.get("event") in {"hello-ok", "hello-fail"})
+            and self._hello_wait is not None
+            and not self._hello_wait.done()
+        ):
             await self._maybe_finish_handshake(frame)
             return
-        if (
-            self._state == ConnectionState.READY
-            and ftype == "event"
-            and frame.get("event") == "message.send"
-        ):
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "message.send":
+            payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+            message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+            fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
+            body = message.get("body")
+            body_keys = sorted(body.keys()) if isinstance(body, dict) else []
+            body_len = len(body) if isinstance(body, (str, list, dict)) else 0
+            logger.info(
+                "clawchat ws dispatch message.send chat_id=%s sender_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                frame.get("chat_id"),
+                (frame.get("sender") or {}).get("id") if isinstance(frame.get("sender"), dict) else None,
+                len(fragments),
+                sorted(payload.keys()),
+                sorted(message.keys()),
+                type(body).__name__,
+                body_keys,
+                body_len,
+            )
             await self._on_message(frame)
             return
+        logger.info(
+            "clawchat ws ignored event=%s type=%s state=%s",
+            frame.get("event"),
+            ftype,
+            self._state.value,
+        )
 
     async def _handle_challenge(self, frame: dict[str, Any]) -> None:
         nonce = extract_nonce(frame)
         if not nonce:
             logger.warning("challenge missing nonce")
             return
-        req_id = new_frame_id("req")
+        req_id = new_frame_id("trace")
         self._pending_connect_id = req_id
         sign = compute_client_sign(CLIENT_ID, nonce, self._cfg.token)
         connect_req = build_connect_request(
@@ -244,12 +326,22 @@ class ClawChatConnection:
             client_version=CLIENT_VERSION,
             sign=sign,
         )
+        connect_req["payload"]["nonce"] = nonce
+        logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)
         await self._ws.send(encode_frame(connect_req))
 
     async def _maybe_finish_handshake(self, frame: dict[str, Any]) -> None:
         if self._pending_connect_id and is_hello_ok(frame, self._pending_connect_id):
             if self._hello_wait is not None and not self._hello_wait.done():
+                logger.info("clawchat ws handshake complete id=%s", self._pending_connect_id)
                 self._hello_wait.set_result(True)
+            return
+        logger.warning(
+            "clawchat ws handshake response ignored event=%s trace_id=%s pending_id=%s",
+            frame.get("event"),
+            frame.get("trace_id"),
+            self._pending_connect_id,
+        )
 
     def _enqueue_text(self, text: str, *, front: bool = False) -> None:
         if len(self._send_queue) >= SEND_QUEUE_MAX:
