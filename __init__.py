@@ -71,6 +71,58 @@ def _tool_error(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc), "kind": exc.__class__.__name__}
 
 
+async def _handle_clawchat_activate(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    _handle_clawchat_activate._last_task_id = task_id
+    logger.info("clawchat_activate start task_id=%s", task_id)
+    try:
+        from clawchat_gateway.activate import activate
+        from clawchat_gateway.api_client import DEFAULT_BASE_URL
+
+        base_url = str(args.get("baseUrl") or "").strip() or DEFAULT_BASE_URL
+        result = await activate(str(args.get("code") or "").strip(), base_url=base_url)
+        result["ok"] = True
+        logger.info("clawchat_activate done task_id=%s user_id=%s", task_id, result.get("user_id"))
+        return result
+    except Exception as exc:
+        logger.warning("clawchat_activate failed task_id=%s error=%s", task_id, exc)
+        return _tool_error(exc)
+
+
+async def _handle_clawchat_update_nickname(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    _handle_clawchat_update_nickname._last_task_id = task_id
+    logger.info("clawchat_update_nickname start task_id=%s", task_id)
+    try:
+        from clawchat_gateway.profile import update_nickname
+
+        result = await update_nickname(str(args.get("nickname") or ""))
+        logger.info("clawchat_update_nickname done task_id=%s", task_id)
+        return result
+    except Exception as exc:
+        logger.warning("clawchat_update_nickname failed task_id=%s error=%s", task_id, exc)
+        return _tool_error(exc)
+
+
+async def _handle_clawchat_update_avatar(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    _handle_clawchat_update_avatar._last_task_id = task_id
+    logger.info("clawchat_update_avatar start task_id=%s", task_id)
+    try:
+        from clawchat_gateway.profile import update_avatar
+
+        result = await update_avatar(str(args.get("filePath") or ""))
+        logger.info(
+            "clawchat_update_avatar done task_id=%s avatar_url=%s",
+            task_id,
+            result.get("updated", {}).get("avatar_url"),
+        )
+        return result
+    except Exception as exc:
+        logger.warning("clawchat_update_avatar failed task_id=%s error=%s", task_id, exc)
+        return _tool_error(exc)
+
+
 def _register_tools(ctx) -> None:
     activate_schema = {
         "name": "clawchat_activate",
@@ -96,23 +148,11 @@ def _register_tools(ctx) -> None:
         },
     }
 
-    async def handle_activate(params):
-        try:
-            from clawchat_gateway.activate import activate
-            from clawchat_gateway.api_client import DEFAULT_BASE_URL
-
-            base_url = str(params.get("baseUrl") or "").strip() or DEFAULT_BASE_URL
-            result = await activate(str(params.get("code") or "").strip(), base_url=base_url)
-            result["ok"] = True
-            return result
-        except Exception as exc:
-            return _tool_error(exc)
-
     ctx.register_tool(
         "clawchat_activate",
         "clawchat",
         activate_schema,
-        handle_activate,
+        _handle_clawchat_activate,
         is_async=True,
         description="Activate ClawChat credentials from a user-provided activation code.",
         emoji="🔑",
@@ -130,19 +170,11 @@ def _register_tools(ctx) -> None:
         },
     }
 
-    async def handle_update_nickname(params):
-        try:
-            from clawchat_gateway.profile import update_nickname
-
-            return await update_nickname(str(params.get("nickname") or ""))
-        except Exception as exc:
-            return _tool_error(exc)
-
     ctx.register_tool(
         "clawchat_update_nickname",
         "clawchat",
         nickname_schema,
-        handle_update_nickname,
+        _handle_clawchat_update_nickname,
         is_async=True,
         description="Update the ClawChat agent nickname.",
         emoji="🏷️",
@@ -167,19 +199,11 @@ def _register_tools(ctx) -> None:
         },
     }
 
-    async def handle_update_avatar(params):
-        try:
-            from clawchat_gateway.profile import update_avatar
-
-            return await update_avatar(str(params.get("filePath") or ""))
-        except Exception as exc:
-            return _tool_error(exc)
-
     ctx.register_tool(
         "clawchat_update_avatar",
         "clawchat",
         avatar_schema,
-        handle_update_avatar,
+        _handle_clawchat_update_avatar,
         is_async=True,
         description="Upload a local avatar image first, then update the ClawChat profile avatar URL.",
         emoji="🖼️",

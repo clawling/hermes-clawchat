@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
+import sys
+from types import ModuleType
 from pathlib import Path
 
 
@@ -50,3 +53,19 @@ def test_git_plugin_registers_tools_and_skill(monkeypatch):
     assert "upload" in ctx.tools["clawchat_update_avatar"]["schema"]["description"]
     assert "/v1/files/upload-url" in ctx.tools["clawchat_update_avatar"]["schema"]["description"]
     assert "clawchat" in ctx.skills
+
+
+def test_git_plugin_handlers_accept_task_id(monkeypatch):
+    module = _load_root_plugin()
+
+    async def fake_update_nickname(nickname):
+        return {"updated": {"nickname": nickname}}
+
+    fake_profile = ModuleType("clawchat_gateway.profile")
+    fake_profile.update_nickname = fake_update_nickname
+    monkeypatch.setitem(sys.modules, "clawchat_gateway.profile", fake_profile)
+
+    result = asyncio.run(module._handle_clawchat_update_nickname({"nickname": "bot"}, task_id="trace-123"))
+
+    assert result == {"updated": {"nickname": "bot"}}
+    assert module._handle_clawchat_update_nickname._last_task_id == "trace-123"
