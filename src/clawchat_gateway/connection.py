@@ -25,6 +25,7 @@ from clawchat_gateway.protocol import (
     is_hello_ok,
     new_frame_id,
 )
+from clawchat_gateway.device_id import get_device_id
 
 logger = logging.getLogger("clawchat_gateway.connection")
 
@@ -32,7 +33,6 @@ HANDSHAKE_TIMEOUT_SECONDS = 10.0
 SEND_QUEUE_MAX = 128
 CLIENT_ID = "hermes-agent"
 CLIENT_VERSION = "hermes-clawchat/0.1"
-DEVICE_ID = "openclaw-clawchat"
 BACKOFF_RESET_AFTER_SECONDS = 5.0
 
 
@@ -195,7 +195,7 @@ class ClawChatConnection:
             self._cfg.websocket_url,
             additional_headers={
                 "Authorization": f"Bearer {self._cfg.token}",
-                "X-Device-Id": DEVICE_ID,
+                "X-Device-Id": get_device_id(),
             },
             subprotocols=["clawchat.v1", f"bearer.{self._cfg.token}"],
             ping_interval=self._cfg.heartbeat_interval_ms / 1000.0,

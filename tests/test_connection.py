@@ -186,6 +186,7 @@ async def test_bearer_auth_header_is_sent_on_connect(monkeypatch):
 async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    monkeypatch.setattr("clawchat_gateway.connection.get_device_id", lambda: "hermes-test-device")
 
     async def on_message(_frame):
         pass
@@ -196,7 +197,7 @@ async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
         await _wait_until(lambda: bool(srv.connect_calls))
         kwargs = srv.connect_calls[0]["kwargs"]
         headers = kwargs.get("additional_headers") or {}
-        assert headers["X-Device-Id"] == "openclaw-clawchat"
+        assert headers["X-Device-Id"] == "hermes-test-device"
         assert kwargs["subprotocols"] == ["clawchat.v1", "bearer.tok-123"]
     finally:
         await conn.stop()

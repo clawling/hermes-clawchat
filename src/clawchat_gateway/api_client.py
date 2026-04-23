@@ -9,11 +9,12 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from clawchat_gateway.device_id import get_device_id
+
 DEFAULT_BASE_URL = "http://company.newbaselab.com:10086"
 DEFAULT_WEBSOCKET_URL = "ws://company.newbaselab.com:10086/ws"
-AGENTS_CONNECT_PLATFORM = "openclaw"
+AGENTS_CONNECT_PLATFORM = "hermes"
 AGENTS_CONNECT_TYPE = "clawbot"
-DEVICE_ID = "openclaw-clawchat"
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class ClawChatApiClient:
         base_url: str,
         token: str = "",
         user_id: str = "",
-        device_id: str = DEVICE_ID,
+        device_id: str | None = None,
     ) -> None:
         if not base_url.startswith(("http://", "https://")):
             raise ClawChatApiError(
@@ -51,7 +52,7 @@ class ClawChatApiClient:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._user_id = user_id
-        self._device_id = device_id
+        self._device_id = device_id or get_device_id()
 
     async def get_my_profile(self) -> dict:
         return await self._call_json("GET", "/v1/users/me")
