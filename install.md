@@ -4,7 +4,15 @@ A guide for installing the ClawChat plugin into a Hermes Agent environment.
 
 ## 1. Verify the Hermes environment
 
-Before installing, confirm that the `hermes` CLI is available on your `PATH`:
+Before installing, activate the Hermes venv if it's present at the default location:
+
+```bash
+if [ -d /opt/hermes/.venv/bin ]; then
+  source /opt/hermes/.venv/bin/activate
+fi
+```
+
+Then confirm that the `hermes` CLI is available on your `PATH`:
 
 ```bash
 hermes --version
