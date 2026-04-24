@@ -20,7 +20,18 @@ hermes plugins list        # confirm the plugin subcommand works
 echo "$HERMES_HOME"        # defaults to ~/.hermes if unset
 ```
 
-## 2. Install the plugin
+## 2. Remove any existing installation
+
+If `hermes-clawchat` is already installed, uninstall it first to avoid conflicts with the auto-install patches:
+
+```bash
+hermes plugins list | grep hermes-clawchat   # check whether it's installed
+hermes plugins uninstall hermes-clawchat     # only if the previous command found it
+```
+
+If the plugin is not listed, skip this step.
+
+## 3. Install the plugin
 
 Once `hermes` is available, install from the registry:
 
@@ -30,7 +41,7 @@ hermes plugins install clawling/hermes-clawchat
 
 This will download the plugin, register it with Hermes, and trigger the plugin's auto-install step, which patches the local hermes-agent source to register the `CLAWCHAT` platform.
 
-## 3. Verify installation
+## 4. Verify installation
 
 ```bash
 hermes plugins list
