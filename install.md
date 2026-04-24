@@ -8,7 +8,7 @@ Before installing, add the Hermes venv to your `PATH` if it's present at the def
 
 ```bash
 if [ -d /opt/hermes/.venv/bin ]; then
-  export PATH="/opt/hermes/.venv/bin:$PATH"
+    echo "hermes exist"
 fi
 ```
 
