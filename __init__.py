@@ -67,7 +67,17 @@ def _install_gateway() -> None:
     _refresh_gateway_module_cache()
 
 
-_GATEWAY_MODULES_TO_REFRESH = ("gateway.config", "gateway.run")
+_GATEWAY_MODULES_TO_REFRESH = (
+    "gateway.config",
+    "gateway.run",
+    # Also the adapter: it does ``from gateway.config import Platform`` at
+    # module scope, so if anything imports it before register() has applied
+    # the patch (e.g. a consumer that does ``import clawchat_gateway.adapter``
+    # directly), its bound ``Platform`` is stale even after we reload
+    # ``gateway.config``. Reloading the adapter re-binds it from the fresh
+    # enum.
+    "clawchat_gateway.adapter",
+)
 
 
 def _refresh_gateway_module_cache() -> None:

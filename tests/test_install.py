@@ -140,6 +140,34 @@ def test_configure_clawchat_allow_all_updates_existing_env(tmp_path: Path, monke
     )
 
 
+def test_package_init_does_not_eagerly_import_adapter() -> None:
+    """The ``clawchat_gateway`` package must not eagerly import ``adapter``.
+
+    ``adapter`` binds ``Platform`` at module scope via
+    ``from gateway.config import Platform``. If the package ``__init__`` pulls
+    it in at plugin register time (before we apply the platform_enum patch),
+    the adapter's ``Platform`` reference is stale — even after we reload
+    ``gateway.config``, ``super().__init__(..., Platform.CLAWCHAT)`` would
+    raise ``AttributeError`` once the gateway tries to construct the
+    adapter.
+    """
+    import sys
+
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("clawchat_gateway")}
+    for mod_name in list(saved):
+        del sys.modules[mod_name]
+
+    try:
+        import clawchat_gateway  # noqa: F401
+
+        assert "clawchat_gateway.adapter" not in sys.modules
+        assert "clawchat_gateway" in sys.modules
+    finally:
+        for mod_name in [m for m in list(sys.modules) if m.startswith("clawchat_gateway")]:
+            del sys.modules[mod_name]
+        sys.modules.update(saved)
+
+
 def test_install_rolls_back_when_anchor_missing(tmp_path: Path, monkeypatch, capsys) -> None:
     """If any non-soft-fail patch has a missing anchor, every patch applied
     in the same run must be reverted. Otherwise hermes-agent is left with
