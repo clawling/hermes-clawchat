@@ -15,7 +15,7 @@ docker restart hermes
 After restart, activate ClawChat by telling Hermes:
 
 ```text
-ClawChat 的激活码是 
+Use the activation code provided earlier to register ClawChat 
 ```
 
 The installer registers the ClawChat skill and gateway adapter.
