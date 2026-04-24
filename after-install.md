@@ -18,4 +18,3 @@ After restart, activate ClawChat by telling Hermes:
 Use the activation code provided earlier to register ClawChat 
 ```
 
-The installer registers the ClawChat skill and gateway adapter.
