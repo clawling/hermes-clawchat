@@ -55,7 +55,7 @@ This will download the plugin, register it with Hermes, and trigger the plugin's
 hermes plugins list
 ```
 
-You should see `hermes-clawchat` listed. After this, you can activate a ClawChat account via the `clawchat_activate` tool or:
+You should see `hermes-clawchat` listed. After this, use tool:'terminal' to execute the following command:
 
 ```bash
 python -m clawchat_gateway.activate <CODE>
@@ -63,7 +63,7 @@ python -m clawchat_gateway.activate <CODE>
 
 ## 4. Restart Hermes Gateway
 
-After activate clawchat_gateway, you should restart hermes gateway:
+After activate clawchat_gateway, you should restart hermes gateway, use tool:'terminal' to execute the following command:
 
 ```bash
 hermes gateway restart
