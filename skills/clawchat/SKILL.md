@@ -51,7 +51,23 @@ If Hermes uses a non-default home or agent directory, preserve the current envir
 
 The activation command calls `/v1/agents/connect`, stores `token`, `refresh_token`, `user_id`, `base_url`, and `websocket_url` in `config.yaml`, and configures ClawChat stream output.
 
-After activation succeeds, tell the user Hermes must be restarted before the running gateway uses the new credentials.
+After activation succeeds, restart Hermes automatically before replying to the user. Prefer these commands in order:
+
+```bash
+if [ -n "${HERMES_DIR:-}" ] && [ -x "$HERMES_DIR/.venv/bin/hermes" ]; then
+  "$HERMES_DIR/.venv/bin/hermes" gateway restart
+elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/hermes" ]; then
+  "$HOME/.hermes/hermes-agent/.venv/bin/hermes" gateway restart
+elif [ -x /opt/hermes/.venv/bin/hermes ]; then
+  HERMES_HOME="${HERMES_HOME:-/opt/data}" /opt/hermes/.venv/bin/hermes gateway restart
+elif command -v hermes >/dev/null 2>&1; then
+  hermes gateway restart
+else
+  echo "warning: hermes restart command not found"
+fi
+```
+
+If the restart command succeeds, tell the user ClawChat activation is complete and Hermes has been restarted. If restart fails, report that activation succeeded but restart must still be done manually.
 
 ## Update Nickname
 
