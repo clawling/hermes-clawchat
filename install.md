@@ -55,14 +55,14 @@ This will download the plugin, register it with Hermes, and trigger the plugin's
 hermes plugins list
 ```
 
-You should see `hermes-clawchat` listed. After this, use to execute the following command:
+You should see `hermes-clawchat` listed. After this, use tool:'terminal' to execute the following command:
 
 ```bash
-/clawchat clawchat_gateway <CODE>
+hermes chat -q '/clawchat clawchat_gateway <CODE>'
 
 ```
 
-## 4. Restart Hermes Gateway
+## 4. Last Step Restart Hermes Gateway
 
 After activate clawchat_gateway, you should restart hermes gateway, use tool:'terminal' to execute the following command:
 
