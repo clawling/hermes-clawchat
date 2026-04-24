@@ -4,11 +4,11 @@ A guide for installing the ClawChat plugin into a Hermes Agent environment.
 
 ## 1. Verify the Hermes environment
 
-Before installing, activate the Hermes venv if it's present at the default location:
+Before installing, add the Hermes venv to your `PATH` if it's present at the default location (its existence indicates a Hermes environment):
 
 ```bash
 if [ -d /opt/hermes/.venv/bin ]; then
-  source /opt/hermes/.venv/bin/activate
+  export PATH="/opt/hermes/.venv/bin:$PATH"
 fi
 ```
 
@@ -60,3 +60,12 @@ You should see `hermes-clawchat` listed. After this, you can activate a ClawChat
 ```bash
 python -m clawchat_gateway.activate <CODE>
 ```
+
+## 4. Restart Hermes Gateway
+
+After activate clawchat_gateway, you should restart hermes gateway:
+
+```bash
+hermes gateway restart
+```
+
