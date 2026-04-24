@@ -515,6 +515,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     applied: List[str] = []
     missing: List[str] = []
+    newly_applied: List[Patch] = []
     for patch in patches:
         if args.dry_run:
             if patch_applied(patch):
@@ -537,6 +538,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         result = apply_patch(patch)
         if result:
             applied.append(patch.id)
+            newly_applied.append(patch)
             continue
         if patch_applied(patch):
             continue
@@ -545,12 +547,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         missing.append(patch.id)
 
     if missing:
+        rolled_back: List[str] = []
+        if not args.dry_run:
+            for patch in reversed(newly_applied):
+                if remove_patch(patch):
+                    rolled_back.append(patch.id)
         print(
             json.dumps(
                 {
                     "error": "failed_to_apply_some_patches",
                     "applied": applied,
                     "missing": missing,
+                    "rolled_back": rolled_back,
                 },
                 indent=2,
             ),

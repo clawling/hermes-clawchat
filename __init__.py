@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import site
@@ -56,16 +57,42 @@ def _register_python_path(src: Path) -> None:
 
 
 def _install_gateway() -> None:
-    plugin_dir = _plugin_dir()
-    src = plugin_dir / "src"
-    _register_python_path(src)
-
     from clawchat_gateway.install import main as install_main
 
     hermes_dir = _hermes_dir()
     code = install_main(["--hermes-dir", str(hermes_dir)])
     if code != 0:
         raise RuntimeError(f"clawchat gateway install failed with exit code {code}")
+
+    _refresh_gateway_module_cache()
+
+
+_GATEWAY_MODULES_TO_REFRESH = ("gateway.config", "gateway.run")
+
+
+def _refresh_gateway_module_cache() -> None:
+    """Ensure patched gateway modules are picked up by later imports.
+
+    Plugin discovery can run after hermes-agent's CLI has already imported
+    ``gateway.config`` (e.g. to validate the loaded config). Our file patch
+    won't take effect unless we invalidate the import caches and reload any
+    gateway module that was imported before we patched it on disk, otherwise
+    ``gateway.run`` resolves ``Platform.CLAWCHAT`` against a stale enum.
+    """
+    importlib.invalidate_caches()
+    for mod_name in _GATEWAY_MODULES_TO_REFRESH:
+        mod = sys.modules.get(mod_name)
+        if mod is None:
+            continue
+        try:
+            importlib.reload(mod)
+        except Exception as exc:
+            logger.error(
+                "ClawChat could not reload %s after patching; existing "
+                "references to its symbols may be stale: %s",
+                mod_name,
+                exc,
+            )
 
 
 def _tool_error(exc: Exception) -> dict:
@@ -246,6 +273,18 @@ def _register_tools(ctx) -> None:
 
 def register(ctx) -> None:
     _register_python_path(_plugin_dir() / "src")
+
+    try:
+        _install_gateway()
+    except Exception as exc:
+        logger.error(
+            "ClawChat gateway auto-install failed; skipping tool/skill "
+            "registration to avoid leaving hermes-agent in a partially "
+            "patched state: %s",
+            exc,
+        )
+        raise
+
     _register_tools(ctx)
 
     skill = _plugin_dir() / "skills" / "clawchat" / "SKILL.md"
@@ -255,8 +294,3 @@ def register(ctx) -> None:
             skill,
             description="Activate and operate the ClawChat Hermes gateway integration.",
         )
-
-    try:
-        _install_gateway()
-    except Exception as exc:
-        logger.warning("Failed to auto-install ClawChat gateway plugin: %s", exc)

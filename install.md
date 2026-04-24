@@ -55,10 +55,11 @@ This will download the plugin, register it with Hermes, and trigger the plugin's
 hermes plugins list
 ```
 
-You should see `hermes-clawchat` listed. After this, use tool:'terminal' to execute the following command:
+You should see `hermes-clawchat` listed. After this, use to execute the following command:
 
 ```bash
-python -m clawchat_gateway.activate <CODE>
+/clawchat clawchat_gateway <CODE>
+
 ```
 
 ## 4. Restart Hermes Gateway

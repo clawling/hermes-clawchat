@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from clawchat_gateway.install import (
@@ -13,6 +14,7 @@ from clawchat_gateway.install import (
     configure_clawchat_streaming,
     clear_skills_prompt_snapshot,
     install_plugin,
+    main as install_main,
     patch_applied,
     plugin_installed,
     remove_patch,
@@ -136,6 +138,49 @@ def test_configure_clawchat_allow_all_updates_existing_env(tmp_path: Path, monke
         "KIMI_BASE_URL=https://api.kimi.com/coding/v1\n"
         "CLAWCHAT_ALLOW_ALL_USERS=true\n"
     )
+
+
+def test_install_rolls_back_when_anchor_missing(tmp_path: Path, monkeypatch, capsys) -> None:
+    """If any non-soft-fail patch has a missing anchor, every patch applied
+    in the same run must be reverted. Otherwise hermes-agent is left with
+    e.g. `Platform.CLAWCHAT,` in run.py but no `CLAWCHAT` member on the enum.
+    """
+    hermes_dir = tmp_path / "hermes-agent"
+    (hermes_dir / "gateway").mkdir(parents=True)
+    (hermes_dir / "agent").mkdir(parents=True)
+    (hermes_dir / "tools").mkdir(parents=True)
+    (hermes_dir / "hermes_cli").mkdir(parents=True)
+
+    # Present: anchors for the FIRST config.py patch and the adapter_factory
+    # patch in run.py — these should apply, then get rolled back.
+    (hermes_dir / "gateway" / "config.py").write_text(
+        'class Platform(str, Enum):\n    QQBOT = "qqbot"\n'
+    )
+    # Deliberately omit the anchor for `connected_platforms` so mid-run
+    # failure triggers rollback.
+    (hermes_dir / "gateway" / "run.py").write_text(
+        "elif platform == Platform.QQBOT:\n    pass\n"
+    )
+    (hermes_dir / "agent" / "prompt_builder.py").write_text("")
+    (hermes_dir / "tools" / "send_message_tool.py").write_text("")
+    (hermes_dir / "hermes_cli" / "platforms.py").write_text("")
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / ".hermes-home"))
+
+    rc = install_main(["--hermes-dir", str(hermes_dir)])
+    assert rc == 1
+
+    err = capsys.readouterr().err
+    report = json.loads(err.strip())
+    assert report["error"] == "failed_to_apply_some_patches"
+    assert "platform_enum" in report["rolled_back"]
+
+    # The partially-applied patches must be gone from disk.
+    config_text = (hermes_dir / "gateway" / "config.py").read_text()
+    assert "clawchat-gateway:platform_enum:start" not in config_text
+    assert 'CLAWCHAT = "clawchat"' not in config_text
+    run_text = (hermes_dir / "gateway" / "run.py").read_text()
+    assert "clawchat-gateway:adapter_factory:start" not in run_text
 
 
 def test_configure_clawchat_streaming_writes_config(tmp_path: Path, monkeypatch) -> None:
