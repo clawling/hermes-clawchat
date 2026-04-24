@@ -12,10 +12,7 @@ spec:
     - name: hermes-agent
       image: nousresearch/hermes-agent
       imagePullPolicy: Always
-      command: ["hermes", "gateway", "start"]
-      env:
-        - name: HERMES_HOME
-          value: /root/.hermes
+      args: ["gateway", "run"]
       resources:
         requests:
           cpu: "250m"
