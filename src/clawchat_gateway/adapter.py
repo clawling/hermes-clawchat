@@ -349,6 +349,8 @@ class ClawChatAdapter(BasePlatformAdapter):
         chat_id: str,
         message_id: str,
         content: str,
+        finalize: bool = False,
+        **kwargs: Any,
     ) -> SendResult:
         run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
@@ -359,27 +361,33 @@ class ClawChatAdapter(BasePlatformAdapter):
             )
             return SendResult(success=False, error="no active run for message_id")
 
-        if self._should_suppress_tool_progress(content or ""):
+        if self._should_suppress_tool_progress(content or "") and not finalize:
             logger.info("clawchat tool progress edit suppressed chat_id=%s message_id=%s text_len=%d", chat_id, message_id, len(content or ""))
             return SendResult(success=True, message_id=run.message_id)
 
         visible_content = self._filter_output_content(content or "")
         full_text, delta = compute_delta(run.last_text, visible_content)
-        if not delta:
-            return SendResult(success=True, message_id=run.message_id)
-
-        await self._connection.send_frame(
-            build_message_add_event(
-                chat_id=chat_id,
-                chat_type=run.chat_type,
-                message_id=run.message_id,
-                full_text=full_text,
-                delta=delta,
-                sequence=run.sequence + 1,
+        if delta:
+            await self._connection.send_frame(
+                build_message_add_event(
+                    chat_id=chat_id,
+                    chat_type=run.chat_type,
+                    message_id=run.message_id,
+                    full_text=full_text,
+                    delta=delta,
+                    sequence=run.sequence + 1,
+                )
             )
-        )
-        run.sequence += 1
-        run.last_text = full_text
+            run.sequence += 1
+            run.last_text = full_text
+
+        if finalize:
+            await self.on_run_complete(
+                chat_id=chat_id,
+                final_text=content or "",
+                message_id=run.message_id,
+            )
+
         return SendResult(success=True, message_id=run.message_id)
 
     async def on_run_complete(

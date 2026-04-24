@@ -429,6 +429,48 @@ async def test_edit_message_targets_run_by_message_id_with_overlapping_streams()
     assert adapter._active_runs_by_id[second.message_id].last_text == "second"
 
 
+async def test_edit_message_with_finalize_emits_done_and_reply():
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hello")
+    adapter._connection.sent_frames.clear()
+
+    result = await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hello world",
+        finalize=True,
+    )
+
+    assert result.success is True
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == [
+        "message.add",
+        "message.done",
+        "message.reply",
+    ]
+    assert adapter._connection.sent_frames[0]["payload"]["fragments"][0]["delta"] == " world"
+    assert adapter._connection.sent_frames[1]["payload"]["fragments"] == [
+        {"kind": "text", "text": "hello world"}
+    ]
+    assert first.message_id not in adapter._active_runs_by_id
+
+
+async def test_edit_message_ignores_unknown_kwargs():
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hi")
+    adapter._connection.sent_frames.clear()
+
+    result = await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hi there",
+        stream_id="abc",
+        chunk_index=3,
+    )
+
+    assert result.success is True
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.add"]
+
+
 async def test_on_run_complete_emits_message_done_without_static_reply():
     adapter = _make_adapter(reply_mode="stream")
     first = await adapter.send(chat_id="u1", content="hello")
