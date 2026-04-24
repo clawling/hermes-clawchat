@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hermes-plugin-test
+  labels:
+    purpose: hermes-plugin-test
