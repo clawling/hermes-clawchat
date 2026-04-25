@@ -115,6 +115,7 @@ def build_patches(hermes_dir: Path) -> List[Patch]:
     prompts = str(hermes_dir / "agent" / "prompt_builder.py")
     send_tool = str(hermes_dir / "tools" / "send_message_tool.py")
     cli_platforms = str(hermes_dir / "hermes_cli" / "platforms.py")
+    cron_scheduler = str(hermes_dir / "cron" / "scheduler.py")
 
     return [
         Patch(
@@ -259,6 +260,22 @@ def build_patches(hermes_dir: Path) -> List[Patch]:
             file=cli_platforms,
             anchor='("qqbot",',
             payload='("clawchat",       PlatformInfo(label="ClawChat",         default_toolset="hermes-cli")),\n',
+            insert_after=True,
+            indent_to_anchor=True,
+        ),
+        Patch(
+            id="cron_known_delivery_platforms",
+            file=cron_scheduler,
+            anchor='"qqbot",',
+            payload='"clawchat",\n',
+            insert_after=True,
+            indent_to_anchor=True,
+        ),
+        Patch(
+            id="cron_platform_map",
+            file=cron_scheduler,
+            anchor='"qqbot": Platform.QQBOT,',
+            payload='"clawchat": Platform.CLAWCHAT,\n',
             insert_after=True,
             indent_to_anchor=True,
         ),

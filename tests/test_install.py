@@ -37,6 +37,8 @@ def test_build_patches_contains_expected_ids(tmp_path: Path) -> None:
         "normal_stream_done_hook",
         "send_message_tool",
         "cli_platform_registry",
+        "cron_known_delivery_platforms",
+        "cron_platform_map",
         "startup_any_allowlist",
         "startup_allow_all",
         "update_allowed_platforms",
@@ -79,6 +81,33 @@ def test_cli_platform_registry_patch_inserts_clawchat(tmp_path: Path) -> None:
     assert '"clawchat"' in content
     assert 'default_toolset="hermes-cli"' in content
     assert patch_applied(patch) is True
+
+
+def test_cron_scheduler_patches_insert_clawchat(tmp_path: Path) -> None:
+    target = tmp_path / "scheduler.py"
+    target.write_text(
+        "_KNOWN_DELIVERY_PLATFORMS = frozenset({\n"
+        '    "qqbot",\n'
+        "})\n"
+        "\n"
+        "    platform_map = {\n"
+        '        "qqbot": Platform.QQBOT,\n'
+        "    }\n"
+    )
+    patches = {p.id: p for p in build_patches(tmp_path)}
+
+    known = patches["cron_known_delivery_platforms"]
+    known.file = str(target)
+    pmap = patches["cron_platform_map"]
+    pmap.file = str(target)
+
+    assert apply_patch(known) is True
+    assert apply_patch(pmap) is True
+    content = target.read_text()
+    assert '"clawchat",\n' in content
+    assert '"clawchat": Platform.CLAWCHAT,\n' in content
+    assert patch_applied(known) is True
+    assert patch_applied(pmap) is True
 
 
 def test_install_state_round_trip(tmp_path: Path) -> None:
