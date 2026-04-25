@@ -1,6 +1,6 @@
 # hermes-clawchat — Code Reference
 
-Per-module catalogue of structures and functions. For runtime flow and the boot sequence, see [architecture.md](./architecture.md).
+Per-module catalogue of structures and functions. For runtime flow and the boot sequence, see [architecture.md](./architecture.md). For the upstream ClawChat Protocol v2 wire format, REST envelope, and OpenClaw-side channel plugin that this adapter mirrors, see [openclaw-clawchat.md](./openclaw-clawchat.md).
 
 ## Index
 
@@ -23,3 +23,4 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 | `src/clawchat_gateway/device_id.py` | Stable `X-Device-Id` resolver | [device-id.md](./device-id.md) |
 | `skills/clawchat/SKILL.md` | Hermes skill surfaced to the model | [skill.md](./skill.md) |
 | `tests/` | Pytest suite and hermes-agent stubs | [tests.md](./tests.md) |
+| _(external)_ | ClawChat Protocol v2 / OpenClaw channel plugin reference | [openclaw-clawchat.md](./openclaw-clawchat.md) |

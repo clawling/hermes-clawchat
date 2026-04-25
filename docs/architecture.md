@@ -10,12 +10,12 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 
 1. Hermes loads the repo root as a plugin and calls `register(ctx)` in `__init__.py`.
 2. `_register_python_path(src)` inserts `src/` onto `sys.path` and drops a `clawchat_gateway_src.pth` file in a writable site-packages dir so subprocess Pythons also find the package.
-3. `_register_tools(ctx)` registers three tools:
+3. `_install_gateway()` invokes `clawchat_gateway.install.main(["--hermes-dir", ...])`, which anchor-patches hermes-agent's source files. The install is **atomic** — if any required anchor is missing, every patch already applied in this run is rolled back, the call exits non-zero, and `register()` re-raises so hermes-agent never sees a half-patched tree (e.g. `Platform.CLAWCHAT` references in `gateway/run.py` without a `CLAWCHAT` member on the enum). On success, `_refresh_gateway_module_cache()` reloads `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter` so any modules already imported by hermes-agent before plugin discovery pick up the on-disk patches.
+4. `_register_tools(ctx)` registers three tools:
    - `clawchat_activate`
    - `clawchat_update_nickname`
    - `clawchat_update_avatar`
-4. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
-5. `_install_gateway()` invokes `clawchat_gateway.install.main(["--hermes-dir", ...])`, which anchor-patches hermes-agent's source files (idempotent). Failures are logged but do not abort plugin load.
+5. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
 
 ## Runtime data flow
 
@@ -40,7 +40,8 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 
 ## Key design choices
 
-- **Anchor-patch installer.** Because hermes-agent has no pluggable platform API, `install.py` inserts named blocks into hermes-agent's own source files by matching `anchor` strings. Each block is wrapped with `# clawchat-gateway:<id>:start/end` markers for idempotency and clean uninstall.
+- **Anchor-patch installer.** Because hermes-agent has no pluggable platform API, `install.py` inserts named blocks into hermes-agent's own source files by matching `anchor` strings. Each block is wrapped with `# clawchat-gateway:<id>:start/end` markers for idempotency and clean uninstall. The install run itself is transactional: on a missing anchor it rolls back any patches it just inserted, so a partial run can't strand hermes-agent with `Platform.CLAWCHAT` references but no enum member.
+- **Module cache refresh after patching.** Plugin discovery often runs after hermes-agent's CLI has already imported `gateway.config` to validate the loaded YAML. The on-disk patch then has no effect on the live process unless we `importlib.invalidate_caches()` and reload `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter` (the last because it captures `Platform` at module scope).
 - **`gateway.*` is imported at runtime, stubbed in tests.** Production adapter code imports `gateway.platforms.base.BasePlatformAdapter`; in tests `conftest.py` pre-registers stubs from `tests/fake_hermes.py` so the package can be imported without a real hermes-agent checkout.
 - **Two supported WebSocket paths.** If the WebSocket URL path is `/v1/ws`, the legacy hello/challenge handshake is skipped (realtime subprotocol). Otherwise the adapter does a `connect` frame with HMAC `sign` over `client_id|nonce` and waits for `hello-ok`.
 - **Streaming with deltas.** `stream_buffer.compute_delta(prev, curr)` produces the appended chunk so `message.add` carries only the delta. If the new text isn't a prefix-extension of the previous, the full text is resent.

@@ -65,6 +65,8 @@ Returns the full list of patches, targeting files under `hermes_dir`:
 | `normal_stream_done_hook` | `gateway/run.py` | `# Clean up tracking` | Call `adapter.on_run_complete` from `result_holder` — `soft_fail=True` |
 | `send_message_tool` | `tools/send_message_tool.py` | `"qqbot": Platform.QQBOT,` | `"clawchat": Platform.CLAWCHAT,` |
 | `cli_platform_registry` | `hermes_cli/platforms.py` | `("qqbot",` | `("clawchat", PlatformInfo(label="ClawChat", default_toolset="hermes-cli")),` |
+| `cron_known_delivery_platforms` | `cron/scheduler.py` | `"qqbot",` | `"clawchat",` — adds ClawChat to the cron delivery allowlist |
+| `cron_platform_map` | `cron/scheduler.py` | `"qqbot": Platform.QQBOT,` | `"clawchat": Platform.CLAWCHAT,` — maps `deliver=clawchat:<chat_id>` cron jobs to the platform enum |
 | `startup_any_allowlist` | `gateway/run.py` | `"QQ_ALLOWED_USERS",` | `"CLAWCHAT_ALLOWED_USERS",` |
 | `startup_allow_all` | `gateway/run.py` | `"QQ_ALLOW_ALL_USERS")` | `"CLAWCHAT_ALLOW_ALL_USERS", ` (inserted **before**, not indented) |
 | `update_allowed_platforms` | `gateway/run.py` | `Platform.FEISHU, ... QQBOT, Platform.LOCAL,` | `Platform.CLAWCHAT, ` (inserted before, not indented) |
@@ -104,9 +106,21 @@ Flags:
 - `--uninstall` — remove patches in reverse order, delete state file, uninstall skill. Honours `--dry-run`.
 - `--dry-run` — compute-only, print without writing.
 
+### Atomic install
+
+The non-dry-run install path tracks every newly applied patch in a `newly_applied` list. The moment a patch fails (anchor missing, file missing, and `soft_fail=False`), the runner walks `reversed(newly_applied)` and calls `remove_patch` on each, then prints
+
+```json
+{"error": "failed_to_apply_some_patches", "applied": [...], "missing": [...], "rolled_back": [...]}
+```
+
+to stderr and returns `1`. This guarantees hermes-agent never observes a half-patched tree (for example: `Platform.CLAWCHAT` referenced in `gateway/run.py` without the enum member having been added to `gateway/config.py`).
+
+`tests/test_install.py::test_install_rolls_back_when_anchor_missing` exercises this path.
+
 Exit codes:
 - `0` — success / clean check.
-- `1` — missing patches, skill install failure, or incomplete check.
+- `1` — missing patches (after rollback), skill install failure, or incomplete check.
 - `2` — `--hermes-dir` doesn't exist.
 
 Install output JSON fields:

@@ -27,7 +27,8 @@ The actual tools are registered dynamically via `ctx.register_tool` in `register
 | `_plugin_dir` | `() -> Path` | Absolute path of this file's parent directory. |
 | `_hermes_dir` | `() -> Path` | Resolve hermes-agent dir from `HERMES_DIR` / `HERMES_AGENT_DIR`; fall back to `/opt/hermes` if `/opt/hermes/gateway` exists, else `$HERMES_HOME/hermes-agent`. |
 | `_register_python_path` | `(src: Path) -> None` | Prepend `src` to `sys.path` **and** write `clawchat_gateway_src.pth` into the first writable site-packages so child Pythons also import the package. Raises `RuntimeError` if no writable dir is found. |
-| `_install_gateway` | `() -> None` | Call `clawchat_gateway.install.main(["--hermes-dir", ...])`; raise `RuntimeError` on non-zero exit. |
+| `_install_gateway` | `() -> None` | Call `clawchat_gateway.install.main(["--hermes-dir", ...])`; raise `RuntimeError` on non-zero exit, then `_refresh_gateway_module_cache()`. |
+| `_refresh_gateway_module_cache` | `() -> None` | `importlib.invalidate_caches()` then reload any module in `_GATEWAY_MODULES_TO_REFRESH` (`gateway.config`, `gateway.run`, `clawchat_gateway.adapter`) that's already in `sys.modules`. Required because hermes-agent's CLI may have imported `gateway.config` before plugin discovery — without a reload, `Platform.CLAWCHAT` resolves against the pre-patch enum. |
 
 ### Tool error shaping
 
@@ -66,19 +67,20 @@ Each handler is `async`, takes `(args: dict, **kw)`, and returns a dict (success
 
 Order of operations:
 
-1. `_register_python_path(_plugin_dir() / "src")`
-2. `_register_tools(ctx)`
-3. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
-4. Try `_install_gateway()`; on `Exception`, log a warning and continue.
+1. `_register_python_path(_plugin_dir() / "src")`.
+2. Try `_install_gateway()`. On `Exception`, log an error and **re-raise** — the auto-install must succeed before tools/skill register, otherwise hermes-agent could be left half-patched.
+3. `_register_tools(ctx)`.
+4. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
 
 ## `src/clawchat_gateway/__init__.py`
 
-Public package surface:
+Public package surface — kept deliberately minimal:
 
 ```python
-from clawchat_gateway.adapter import ClawChatAdapter, check_clawchat_requirements
 __version__ = "0.1.0"
-__all__ = ["__version__", "ClawChatAdapter", "check_clawchat_requirements"]
+__all__ = ["__version__"]
 ```
 
-Importing the package forces `adapter.py` to load, which in turn imports `gateway.platforms.base` — make sure hermes-agent stubs are installed (`tests/fake_hermes.py`) if you import this from tests.
+Do **not** re-export `ClawChatAdapter` here. The adapter does `from gateway.config import Platform` at module scope, and the `platform_enum` install patch adds `Platform.CLAWCHAT` to that enum on disk. If anything imports `clawchat_gateway.adapter` before `register()` has applied the patch (for example, a stray `from clawchat_gateway import ClawChatAdapter` on the way to calling `clawchat_gateway.install.main`), the adapter binds a stale `Platform` reference and `super().__init__(..., Platform.CLAWCHAT)` raises `AttributeError` even after `gateway.config` is reloaded. Consumers should always import via the submodule path: `from clawchat_gateway.adapter import ClawChatAdapter`.
+
+`tests/test_install.py::test_package_init_does_not_eagerly_import_adapter` regression-tests this.

@@ -40,7 +40,7 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 - `test_persist_activation_writes_clawchat_config` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `config.yaml` has `platforms.clawchat.enabled`, the expected `extra` keys, and streaming/display defaults.
 
-### `tests/test_adapter.py` (~26 tests)
+### `tests/test_adapter.py` (~30 tests)
 
 Uses a `FakeConnection` stand-in so no WebSocket I/O is performed. Coverage:
 
@@ -49,6 +49,7 @@ Uses a `FakeConnection` stand-in so no WebSocket I/O is performed. Coverage:
 - `send` — static mode (`message.reply`); default filtering of `<think>` and tool output; override via `show_*_output`; suppression and preservation of gateway tool-progress tickers (both for `send` and `edit_message`); logging.
 - Typing indicators — active / inactive / dedupe.
 - Streaming mode — `message.created` → `message.add` sequence, incomplete-block filtering before delta; `edit_message` delta emission; targeting by `message_id` when multiple runs overlap; `on_run_complete` emits `message.done` + `message.reply` and finalises the requested run during overlap.
+- `edit_message` finalize semantics — `finalize=True` flushes the delta and then emits `message.done` + `message.reply` via `on_run_complete`; unknown kwargs from newer hermes-agent stream consumers are swallowed without raising `TypeError`.
 - Outbound media — forces static mode when media is present; classifies non-image MIME correctly; uploads local files before the static reply; `send_image_file` path.
 
 ### `tests/test_api_client.py`
@@ -109,11 +110,14 @@ Matrix of `parse_inbound_message` edge cases:
 
 ### `tests/test_install.py`
 
-- `test_build_patches_contains_expected_ids` — all 14 named patches are present.
+- `test_build_patches_contains_expected_ids` — all 16 named patches are present (including the two `cron_*` patches).
 - `test_apply_and_remove_patch_with_indentation` — indentation is preserved and removal is idempotent.
 - `test_cli_platform_registry_patch_inserts_clawchat` — specific check for the CLI registry patch.
+- `test_cron_scheduler_patches_insert_clawchat` — verifies `cron_known_delivery_platforms` and `cron_platform_map` insert ClawChat into hermes-agent's `cron/scheduler.py` allowlist and platform map so `deliver=clawchat:<chat_id>` cron jobs aren't dropped at the unknown-platform branch.
 - `test_install_state_round_trip` — state file write/read.
 - `test_install_and_uninstall_skill` — installs the skill, removes the legacy plugin dir, round-trips uninstall.
+- `test_install_rolls_back_when_anchor_missing` — fabricates a hermes-agent tree where one anchor is missing, runs `main(...)`, and asserts the run exits non-zero, prints `error: "failed_to_apply_some_patches"` with a `rolled_back` list, and leaves no `clawchat-gateway:` markers in any file (atomic install).
+- `test_package_init_does_not_eagerly_import_adapter` — imports `clawchat_gateway` and `clawchat_gateway.install` and asserts `clawchat_gateway.adapter` is **not** in `sys.modules`. Regression test for the bug where re-exporting `ClawChatAdapter` from the package init forced adapter to bind a stale `Platform` enum before the patch ran.
 - `configure_clawchat_allow_all` — writes + updates `$HERMES_HOME/.env`.
 - `clear_skills_prompt_snapshot`.
 - `configure_clawchat_streaming` — writes a full config.yaml skeleton with the expected defaults.
