@@ -60,23 +60,11 @@ CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 # Activate ClawChat. One-time code — do not retry.
 "$PY" -m clawchat_gateway.activate "$CLAWCHAT_CODE"
 
-# Dispatch the gateway restart detached. We use a tiny Python launcher
-# (start_new_session=True) instead of "hermes gateway restart &" because
-# bash backgrounding gets flagged as [error] by the chat tool, and the
-# foreground form hits a 60-second wall-clock cap and never finishes.
-"$PY" - <<'PYEOF'
-import subprocess
-subprocess.Popen(
-    ["hermes", "gateway", "restart"],
-    stdin=subprocess.DEVNULL,
-    stdout=open("/tmp/clawchat-restart.log", "w"),
-    stderr=subprocess.STDOUT,
-    start_new_session=True,
-)
-print("clawchat: gateway restart dispatched")
-PYEOF
+echo "clawchat: install + activation complete"
 ```
 
-When this block exits cleanly with `clawchat: gateway restart dispatched` printed, the install is complete and the gateway is restarting in its own session. **Do not** run `hermes gateway restart` afterwards (it will just hit the chat-tool's 60-second timeout and add nothing — the dispatched restart is already running), **do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
+When this block exits cleanly with `clawchat: install + activation complete` printed, the install is done. **Do not** run `hermes gateway restart` from inside this chat session — it does not return within the chat tool's 60-second cap and never accomplishes anything useful here. ClawChat credentials are now in `~/.hermes/config.yaml`; the gateway will pick them up the next time it starts (e.g., via `hermes gateway run` or whatever the deployment uses to start the gateway). If a gateway is already running outside this chat session, the operator can restart it manually after this command exits.
+
+**Do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
 
 Reply once: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds." That is your final message — stop calling tools.
