@@ -62,11 +62,23 @@ CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 # Activate ClawChat. One-time code — do not retry.
 "$PY" -m clawchat_gateway.activate "$CLAWCHAT_CODE"
 
-# Dispatch the gateway restart detached. Returns immediately; the gateway
-# finishes restarting in its own session a few seconds later.
-nohup hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
+# Dispatch the gateway restart detached. We use a tiny Python launcher
+# (start_new_session=True) instead of "hermes gateway restart &" because
+# bash backgrounding gets flagged as [error] by the chat tool, and the
+# foreground form hits a 60-second wall-clock cap and never finishes.
+"$PY" - <<'PYEOF'
+import subprocess
+subprocess.Popen(
+    ["hermes", "gateway", "restart"],
+    stdin=subprocess.DEVNULL,
+    stdout=open("/tmp/clawchat-restart.log", "w"),
+    stderr=subprocess.STDOUT,
+    start_new_session=True,
+)
+print("clawchat: gateway restart dispatched")
+PYEOF
 ```
 
-When this block exits, the install is complete. The `&` on the last line will surface as `[error]` in the chat-tool UI — that is just how the chat-tool labels backgrounded commands; the restart **is** running in its own session. **Do not** run `hermes gateway restart` again in the foreground (it will just hit the chat-tool's 60-second timeout and add nothing), **do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
+When this block exits cleanly with `clawchat: gateway restart dispatched` printed, the install is complete and the gateway is restarting in its own session. **Do not** run `hermes gateway restart` afterwards (it will just hit the chat-tool's 60-second timeout and add nothing — the dispatched restart is already running), **do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
 
 Reply once: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds." That is your final message — stop calling tools.
