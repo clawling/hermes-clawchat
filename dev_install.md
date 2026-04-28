@@ -61,27 +61,41 @@ hermes plugins list
 
 You should see `hermes-clawchat` listed.
 
-## 5. Activate ClawChat with the connect code
+## 5. Apply patches and activate ClawChat
 
-Activate by calling the plugin CLI directly with the Hermes Python — **do not** start another `hermes chat` session for this step. The activation code is one-time-use and is consumed on first call, so do not retry on success and do not loop.
+`hermes plugins install` only downloads the plugin — it does **not** auto-apply the hermes-agent patches and does **not** put the `clawchat_gateway` package on the Python import path. Run the two commands below in a single terminal block so both steps share the resolved `PYTHONPATH`. **Do not** start another `hermes chat` session for this step. The activation code is one-time-use and is consumed on first call, so do not retry on success and do not loop.
 
-Use tool:'terminal' to execute:
+Use tool:'terminal' to execute exactly:
 
 ```bash
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_AGENT_DIR="${HERMES_DIR:-${HERMES_AGENT_DIR:-}}"
+if [ -z "$HERMES_AGENT_DIR" ]; then
+  if [ -d /opt/hermes/gateway ]; then HERMES_AGENT_DIR=/opt/hermes
+  else HERMES_AGENT_DIR="$HERMES_HOME/hermes-agent"; fi
+fi
+
 PY=""
-if [ -n "${HERMES_DIR:-}" ] && [ -x "$HERMES_DIR/.venv/bin/python" ]; then
-  PY="$HERMES_DIR/.venv/bin/python"
-elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then
-  PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
+if [ -x "$HERMES_AGENT_DIR/.venv/bin/python" ]; then
+  PY="$HERMES_AGENT_DIR/.venv/bin/python"
 elif [ -x /opt/hermes/.venv/bin/python ]; then
   PY="/opt/hermes/.venv/bin/python"
+elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then
+  PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
 else
   PY="python3"
 fi
+
+export PYTHONPATH="$HERMES_HOME/plugins/clawchat/src:${PYTHONPATH:-}"
+
+# 5a. Apply hermes-agent patches (idempotent; required so Platform.CLAWCHAT exists before restart)
+"$PY" -m clawchat_gateway.install --hermes-dir "$HERMES_AGENT_DIR"
+
+# 5b. Activate ClawChat (one-time code; do not retry)
 "$PY" -m clawchat_gateway.activate <CODE>
 ```
 
-The command prints a JSON envelope with `user_id`, `base_url`, and `websocket_url` and exits with code `0` on success. Treat any non-zero exit as failure and report the stderr verbatim — do not retry the command, the code has already been consumed.
+Step 5a prints a JSON summary of applied patches. Step 5b prints a JSON envelope with `user_id`, `base_url`, and `websocket_url` and exits with code `0` on success. Treat any non-zero exit as failure and report the stderr verbatim — do not retry the activation command, the code has already been consumed.
 
 ## 6. Last Step Restart Hermes Gateway
 
