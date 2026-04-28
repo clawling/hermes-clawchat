@@ -59,16 +59,33 @@ This will download the plugin, register it with Hermes, and trigger the plugin's
 hermes plugins list
 ```
 
-You should see `hermes-clawchat` listed. After this, use tool:'terminal' to execute the following command:
+You should see `hermes-clawchat` listed.
+
+## 5. Activate ClawChat with the connect code
+
+Activate by calling the plugin CLI directly with the Hermes Python — **do not** start another `hermes chat` session for this step. The activation code is one-time-use and is consumed on first call, so do not retry on success and do not loop.
+
+Use tool:'terminal' to execute:
 
 ```bash
-hermes chat -q '/clawchat clawchat_gateway <CODE>'
-
+PY=""
+if [ -n "${HERMES_DIR:-}" ] && [ -x "$HERMES_DIR/.venv/bin/python" ]; then
+  PY="$HERMES_DIR/.venv/bin/python"
+elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then
+  PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
+elif [ -x /opt/hermes/.venv/bin/python ]; then
+  PY="/opt/hermes/.venv/bin/python"
+else
+  PY="python3"
+fi
+"$PY" -m clawchat_gateway.activate <CODE>
 ```
 
-## 4. Last Step Restart Hermes Gateway
+The command prints a JSON envelope with `user_id`, `base_url`, and `websocket_url` and exits with code `0` on success. Treat any non-zero exit as failure and report the stderr verbatim — do not retry the command, the code has already been consumed.
 
-After activate clawchat_gateway, you should restart hermes gateway, use tool:'terminal' to execute the following command:
+## 6. Last Step Restart Hermes Gateway
+
+After activation succeeds, use tool:'terminal' to execute the following command exactly once:
 
 ```bash
 hermes gateway restart
