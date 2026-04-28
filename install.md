@@ -98,16 +98,15 @@ CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 
 Step 5a prints a JSON summary of applied patches. Step 5b prints a JSON envelope with `user_id`, `base_url`, and `websocket_url` and exits with code `0` on success. Treat any non-zero exit as failure and report the stderr verbatim — do not retry the activation command, the code has already been consumed.
 
-## 6. Last Step Restart Hermes Gateway
+## 6. Final Step: Dispatch a Detached Gateway Restart
 
-After activation succeeds, restart the gateway. Run it **detached** so the terminal-tool's 60-second safety timeout does not kill it mid-restart — the gateway will keep restarting in its own session after the command returns. Use tool:'terminal' to execute exactly once:
+Run this single line and **stop**. The terminal-tool inside `hermes chat` enforces a 60-second wall-clock cap on foreground commands, and `hermes gateway restart` routinely needs longer than that. So we dispatch it detached and let it finish in its own session — there is nothing to wait for inside the install session.
+
+Use tool:'terminal' to execute exactly once:
 
 ```bash
-setsid hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
-RESTART_PID=$!
-disown
-echo "gateway restart dispatched; pid=$RESTART_PID"
+nohup hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
 ```
 
-The command returns immediately. ClawChat will be live once the gateway finishes its own boot a few seconds later — you do not need to wait for it inside the install session.
+The shell returns immediately while the gateway boots in the background. **Do not** run `hermes gateway restart` again in the foreground, **do not** add a follow-up `echo`, and **do not** retry. Reply to the user that ClawChat activation is complete and the gateway is restarting in the background; activation will become live within a few seconds.
 
