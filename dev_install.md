@@ -88,11 +88,16 @@ fi
 
 export PYTHONPATH="$HERMES_HOME/plugins/clawchat/src:${PYTHONPATH:-}"
 
+# Replace CLAWCHAT_CODE_GOES_HERE with the actual activation code the user gave
+# you, passed as a positional argument to activate (no stdin redirection, no echo
+# pipe). The code is one-time-use and will be consumed on the first call.
+CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
+
 # 5a. Apply hermes-agent patches (idempotent; required so Platform.CLAWCHAT exists before restart)
 "$PY" -m clawchat_gateway.install --hermes-dir "$HERMES_AGENT_DIR"
 
 # 5b. Activate ClawChat (one-time code; do not retry)
-"$PY" -m clawchat_gateway.activate <CODE>
+"$PY" -m clawchat_gateway.activate "$CLAWCHAT_CODE"
 ```
 
 Step 5a prints a JSON summary of applied patches. Step 5b prints a JSON envelope with `user_id`, `base_url`, and `websocket_url` and exits with code `0` on success. Treat any non-zero exit as failure and report the stderr verbatim — do not retry the activation command, the code has already been consumed.
@@ -103,8 +108,9 @@ After activation succeeds, restart the gateway. Run it **detached** so the termi
 
 ```bash
 setsid hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
+RESTART_PID=$!
 disown
-echo "gateway restart dispatched; pid=$!"
+echo "gateway restart dispatched; pid=$RESTART_PID"
 ```
 
 The command returns immediately. ClawChat will be live once the gateway finishes its own boot a few seconds later — you do not need to wait for it inside the install session.
