@@ -95,9 +95,13 @@ Step 5a prints a JSON summary of applied patches. Step 5b prints a JSON envelope
 
 ## 6. Last Step Restart Hermes Gateway
 
-After activation succeeds, use tool:'terminal' to execute the following command exactly once:
+After activation succeeds, restart the gateway. Run it **detached** so the terminal-tool's 60-second safety timeout does not kill it mid-restart — the gateway will keep restarting in its own session after the command returns. Use tool:'terminal' to execute exactly once:
 
 ```bash
-hermes gateway restart
+setsid hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
+disown
+echo "gateway restart dispatched; pid=$!"
 ```
+
+The command returns immediately. ClawChat will be live once the gateway finishes its own boot a few seconds later — you do not need to wait for it inside the install session.
 
