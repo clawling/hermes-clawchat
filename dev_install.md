@@ -35,15 +35,17 @@ Installing runs the plugin's `register()` hook, which patches the local hermes-a
 
 ## 4. Activate ClawChat — call the registered tool, do not shell out
 
-After step 3, the `clawchat_activate` tool is **already registered with the running Hermes session**. Activate by **calling that tool directly** with the user's activation code as the `code` argument.
+After step 3, the `clawchat_activate` tool is **already registered with the running Hermes session**. The user's activation code was supplied in their original message (look for `<CODE>: …` or `code is …`); use it verbatim.
+
+**Immediately** invoke the `clawchat_activate` tool with `code = "<the activation code from the user message>"`. Do **not** ask the user to confirm, do **not** call the `clarify` tool, do **not** echo the code back asking for permission — they already gave you the code; the only thing left is to call the tool.
 
 **Do not**:
 - start another `hermes chat` session for activation,
 - run `python -m clawchat_gateway.activate` from the terminal,
-- run `hermes gateway restart` afterwards.
+- run `hermes gateway restart` afterwards (foreground or background).
 
 The tool persists the credentials to `~/.hermes/config.yaml` **and** dispatches a detached gateway restart for you (via `_schedule_gateway_restart`, in its own session, immune to the chat terminal-tool's 60-second timeout). Running a second `hermes gateway restart` in the foreground will simply hit that 60-second timeout and add nothing.
 
 The activation code is one-time-use — it is consumed on the first call to `/v1/agents/connect`. **Do not retry on failure**: if the tool returns a non-zero result, surface the error verbatim to the user and ask for a fresh code.
 
-When the tool returns successfully, reply to the user that ClawChat is activated and the gateway is restarting in the background; ClawChat will be live within a few seconds.
+When the tool returns successfully, reply once with a short confirmation that ClawChat is activated and the gateway is restarting in the background; ClawChat will be live within a few seconds.
