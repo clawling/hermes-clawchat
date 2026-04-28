@@ -1,61 +1,70 @@
 # Install `hermes-clawchat` Plugin
 
-A guide for installing the ClawChat plugin into a Hermes Agent environment.
+A short, deterministic guide for installing the ClawChat plugin into a Hermes Agent environment. Follow the steps in order. Each step is one tool:'terminal' call — do not split, do not improvise, do not run additional `hermes` commands beyond what is listed here.
 
 ## 1. Verify the Hermes environment
-
-Before installing, add the Hermes venv to your `PATH` if it's present at the default location (its existence indicates a Hermes environment):
 
 ```bash
 if [ -d /opt/hermes/.venv/bin ]; then
     echo "hermes exist"
 fi
-```
-
-Then confirm that the `hermes` CLI is available on your `PATH`:
-
-```bash
 hermes --version
 ```
 
-- If the command prints a version, you're ready to install.
-- If you see `command not found`, install/activate Hermes Agent first (e.g. `source` the Hermes venv or run `which hermes` to locate it), then re-run the check.
+If `hermes` is not on the path, source the Hermes venv first.
 
 ## 2. Remove any existing installation
 
-If `hermes-clawchat` is already installed, uninstall it first to avoid conflicts with the auto-install patches:
+If `hermes-clawchat` is already installed, uninstall it first:
 
 ```bash
-hermes plugins list | grep hermes-clawchat   # check whether it's installed
-hermes plugins uninstall hermes-clawchat     # only if the previous command found it
+hermes plugins list | grep hermes-clawchat
+hermes plugins uninstall hermes-clawchat   # only if listed
 ```
 
-If the plugin is not listed, skip this step.
-
-## 3. Install the plugin
-
-Install from the registry; this clones the plugin and runs its `register()` hook, which patches the local hermes-agent source to add the `CLAWCHAT` platform and registers the `clawchat_activate` tool with the running session:
+## 3. Install and enable the plugin
 
 ```bash
 hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
 ```
 
-`hermes plugins list` should now show `clawchat`.
+This registers the `clawchat_activate` tool and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
 
-## 4. Activate ClawChat — call the registered tool, do not shell out
+## 4. Bootstrap, activate, and dispatch the restart — one terminal call, then stop
 
-After step 3, the `clawchat_activate` tool is **already registered with the running Hermes session**. The user's activation code was supplied in their original message (look for `<CODE>: …` or `code is …`); use it verbatim.
+Run the block below in **one** tool:'terminal' invocation. Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message — pass it as a positional argument to `clawchat_gateway.activate` (no stdin pipe, no `echo | …`). The code is one-time-use; if the command fails, surface the stderr verbatim and ask for a fresh code instead of retrying.
 
-**Immediately** invoke the `clawchat_activate` tool with `code = "<the activation code from the user message>"`. Do **not** ask the user to confirm, do **not** call the `clarify` tool, do **not** echo the code back asking for permission — they already gave you the code; the only thing left is to call the tool.
+```bash
+set -e
 
-**Do not**:
-- start another `hermes chat` session for activation,
-- run `python -m clawchat_gateway.activate` from the terminal,
-- run `hermes gateway restart` afterwards (foreground or background).
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+HERMES_AGENT_DIR="${HERMES_DIR:-${HERMES_AGENT_DIR:-}}"
+if [ -z "$HERMES_AGENT_DIR" ]; then
+  if [ -d /opt/hermes/gateway ]; then HERMES_AGENT_DIR=/opt/hermes
+  else HERMES_AGENT_DIR="$HERMES_HOME/hermes-agent"; fi
+fi
 
-The tool persists the credentials to `~/.hermes/config.yaml` **and** dispatches a detached gateway restart for you (via `_schedule_gateway_restart`, in its own session, immune to the chat terminal-tool's 60-second timeout). Running a second `hermes gateway restart` in the foreground will simply hit that 60-second timeout and add nothing.
+if   [ -x "$HERMES_AGENT_DIR/.venv/bin/python" ];        then PY="$HERMES_AGENT_DIR/.venv/bin/python"
+elif [ -x /opt/hermes/.venv/bin/python ];                then PY="/opt/hermes/.venv/bin/python"
+elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
+else PY="python3"; fi
 
-The activation code is one-time-use — it is consumed on the first call to `/v1/agents/connect`. **Do not retry on failure**: if the tool returns a non-zero result, surface the error verbatim to the user and ask for a fresh code.
+export PYTHONPATH="$HERMES_HOME/plugins/clawchat/src:${PYTHONPATH:-}"
 
-When the tool returns successfully, reply once with a short confirmation that ClawChat is activated and the gateway is restarting in the background; ClawChat will be live within a few seconds.
+CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
+
+# Apply hermes-agent patches (idempotent; no-op if already applied)
+"$PY" -m clawchat_gateway.install --hermes-dir "$HERMES_AGENT_DIR"
+
+# Activate ClawChat. One-time code — do not retry.
+"$PY" -m clawchat_gateway.activate "$CLAWCHAT_CODE"
+
+# Dispatch the gateway restart detached. Returns immediately; the gateway
+# finishes restarting in its own session a few seconds later.
+nohup hermes gateway restart </dev/null >/tmp/clawchat-restart.log 2>&1 &
+```
+
+When this block exits, the install is complete. The `&` on the last line will surface as `[error]` in the chat-tool UI — that is just how the chat-tool labels backgrounded commands; the restart **is** running in its own session. **Do not** run `hermes gateway restart` again in the foreground (it will just hit the chat-tool's 60-second timeout and add nothing), **do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
+
+Reply once: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds." That is your final message — stop calling tools.
