@@ -132,38 +132,82 @@ async def _handle_clawchat_activate(args, **kw):
         return _tool_error(exc)
 
 
-async def _handle_clawchat_update_nickname(args, **kw):
+async def _handle_clawchat_get_account_profile(args, **kw):
     task_id = kw.get("task_id") or "default"
-    _handle_clawchat_update_nickname._last_task_id = task_id
-    logger.info("clawchat_update_nickname start task_id=%s", task_id)
-    try:
-        from clawchat_gateway.profile import update_nickname
+    logger.info("clawchat_get_account_profile start task_id=%s", task_id)
+    from clawchat_gateway import tools
 
-        result = await update_nickname(str(args.get("nickname") or ""))
-        logger.info("clawchat_update_nickname done task_id=%s", task_id)
-        return result
-    except Exception as exc:
-        logger.warning("clawchat_update_nickname failed task_id=%s error=%s", task_id, exc)
-        return _tool_error(exc)
+    result = await tools.get_account_profile()
+    logger.info("clawchat_get_account_profile done task_id=%s", task_id)
+    return result
 
 
-async def _handle_clawchat_update_avatar(args, **kw):
+async def _handle_clawchat_get_user_profile(args, **kw):
     task_id = kw.get("task_id") or "default"
-    _handle_clawchat_update_avatar._last_task_id = task_id
-    logger.info("clawchat_update_avatar start task_id=%s", task_id)
-    try:
-        from clawchat_gateway.profile import update_avatar
+    logger.info("clawchat_get_user_profile start task_id=%s", task_id)
+    from clawchat_gateway import tools
 
-        result = await update_avatar(str(args.get("filePath") or ""))
-        logger.info(
-            "clawchat_update_avatar done task_id=%s avatar_url=%s",
-            task_id,
-            result.get("updated", {}).get("avatar_url"),
-        )
-        return result
-    except Exception as exc:
-        logger.warning("clawchat_update_avatar failed task_id=%s error=%s", task_id, exc)
-        return _tool_error(exc)
+    result = await tools.get_user_profile(str(args.get("userId") or ""))
+    logger.info("clawchat_get_user_profile done task_id=%s", task_id)
+    return result
+
+
+def _optional_int_arg(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+async def _handle_clawchat_list_account_friends(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_list_account_friends start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.list_account_friends(
+        page=_optional_int_arg(args.get("page")),
+        page_size=_optional_int_arg(args.get("pageSize")),
+    )
+    logger.info("clawchat_list_account_friends done task_id=%s", task_id)
+    return result
+
+
+async def _handle_clawchat_update_account_profile(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_update_account_profile start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.update_account_profile(
+        nickname=args.get("nickname") if isinstance(args.get("nickname"), str) else None,
+        avatar_url=args.get("avatar_url") if isinstance(args.get("avatar_url"), str) else None,
+        bio=args.get("bio") if isinstance(args.get("bio"), str) else None,
+    )
+    logger.info("clawchat_update_account_profile done task_id=%s", task_id)
+    return result
+
+
+async def _handle_clawchat_upload_avatar_image(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_upload_avatar_image start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.upload_avatar_image(str(args.get("filePath") or ""))
+    logger.info("clawchat_upload_avatar_image done task_id=%s", task_id)
+    return result
+
+
+async def _handle_clawchat_upload_media_file(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_upload_media_file start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.upload_media_file(str(args.get("filePath") or ""))
+    logger.info("clawchat_upload_media_file done task_id=%s", task_id)
+    return result
 
 
 def _register_tools(ctx) -> None:
@@ -201,55 +245,159 @@ def _register_tools(ctx) -> None:
         emoji="🔑",
     )
 
-    nickname_schema = {
-        "name": "clawchat_update_nickname",
-        "description": "Update the ClawChat agent nickname/display name.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "nickname": {"type": "string", "description": "New ClawChat nickname"}
-            },
-            "required": ["nickname"],
-        },
-    }
-
     ctx.register_tool(
-        "clawchat_update_nickname",
+        "clawchat_get_account_profile",
         "clawchat",
-        nickname_schema,
-        _handle_clawchat_update_nickname,
+        {
+            "name": "clawchat_get_account_profile",
+            "description": (
+                "Fetch the configured ClawChat account profile (user id, nickname/display name, avatar, bio). "
+                "TRIGGER — invoke when the user asks for the ClawChat account/profile connected to this plugin, "
+                "such as 'show my ClawChat profile', 'what is the configured ClawChat account?', "
+                "'当前 ClawChat 账号资料', or 'ClawChat 昵称头像简介'. "
+                "Do not use this for OpenClaw agent persona/profile questions unless the user explicitly means the ClawChat account."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        _handle_clawchat_get_account_profile,
         is_async=True,
-        description="Update the ClawChat agent nickname.",
-        emoji="🏷️",
+        description="Get ClawChat Account Profile",
+        emoji="👤",
     )
 
-    avatar_schema = {
-        "name": "clawchat_update_avatar",
-        "description": (
-            "Update the ClawChat agent avatar from an absolute local file path. "
-            "This tool uploads the file first through `/v1/files/upload-url`, then updates "
-            "the profile with the uploaded avatar URL. Do not pass HTTP URLs or relative paths."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filePath": {
-                    "type": "string",
-                    "description": "Absolute local path to the avatar image file",
-                }
+    ctx.register_tool(
+        "clawchat_get_user_profile",
+        "clawchat",
+        {
+            "name": "clawchat_get_user_profile",
+            "description": (
+                "Fetch a ClawChat user's public profile by userId. "
+                "TRIGGER — invoke when the user asks to look up, view, or inspect a specific ClawChat user's public profile "
+                "and provides a concrete userId. Do not guess or infer userId from a nickname/display name."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "userId": {
+                        "type": "string",
+                        "description": "ClawChat user id (required, must be explicit)",
+                    },
+                },
+                "required": ["userId"],
             },
-            "required": ["filePath"],
         },
-    }
+        _handle_clawchat_get_user_profile,
+        is_async=True,
+        description="Get ClawChat User Profile",
+        emoji="🧑",
+    )
 
     ctx.register_tool(
-        "clawchat_update_avatar",
+        "clawchat_list_account_friends",
         "clawchat",
-        avatar_schema,
-        _handle_clawchat_update_avatar,
+        {
+            "name": "clawchat_list_account_friends",
+            "description": (
+                "List the configured ClawChat account's friends/contacts, paginated (page=1, pageSize=20 by default). "
+                "TRIGGER — invoke when the user asks for this ClawChat account's friends, contacts, friend list, "
+                "or asks to show more friends with pagination."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page": {"type": "integer", "minimum": 1, "description": "1-based page index"},
+                    "pageSize": {"type": "integer", "minimum": 1, "maximum": 100, "description": "1..100"},
+                },
+            },
+        },
+        _handle_clawchat_list_account_friends,
         is_async=True,
-        description="Upload a local avatar image first, then update the ClawChat profile avatar URL.",
+        description="List ClawChat Account Friends",
+        emoji="👥",
+    )
+
+    ctx.register_tool(
+        "clawchat_update_account_profile",
+        "clawchat",
+        {
+            "name": "clawchat_update_account_profile",
+            "description": (
+                "Update the configured ClawChat account profile (nickname and/or avatar_url and/or bio). "
+                "TRIGGER — invoke this tool whenever the user's message explicitly asks to change the ClawChat account profile: "
+                "(1) ClawChat account nickname/name change: 'change the ClawChat account nickname to X', "
+                "'set this ClawChat account name to X', 'ClawChat 昵称改为 X', '账号昵称改成 X', '账号名字叫 X' "
+                "→ call with `nickname = X`; "
+                "(2) ClawChat account avatar/profile-picture change: 'change the ClawChat account avatar', "
+                "'use this image as the ClawChat profile picture', 'ClawChat 头像改为 …', '账号头像换成 …' "
+                "→ first obtain the avatar URL (upload via `clawchat_upload_avatar_image`, OR use a provided URL directly), "
+                "then call this tool with `avatar_url = <url>`; "
+                "(3) ClawChat account bio/self-introduction change: 'update the ClawChat bio', "
+                "'set the ClawChat account self-introduction to X', 'ClawChat 简介改成 X', '账号简介改为 X', '个人简介改为 X' "
+                "→ call with `bio = X`. "
+                "You can pass `nickname`, `avatar_url`, and `bio` together in one call, or just one of them. "
+                "At least one of the three must be present. Do not use this for OpenClaw agent persona changes unless the user explicitly refers to the ClawChat account."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nickname": {"type": "string", "description": "New ClawChat account nickname/display name"},
+                    "avatar_url": {"type": "string", "description": "Hosted avatar image URL"},
+                    "bio": {"type": "string", "description": "New ClawChat account bio/self-introduction"},
+                },
+            },
+        },
+        _handle_clawchat_update_account_profile,
+        is_async=True,
+        description="Update ClawChat Account Profile",
+        emoji="✏️",
+    )
+
+    ctx.register_tool(
+        "clawchat_upload_avatar_image",
+        "clawchat",
+        {
+            "name": "clawchat_upload_avatar_image",
+            "description": (
+                "Upload a local image file to ClawChat avatar storage (max 20MB) and return the hosted avatar URL. "
+                "TRIGGER — invoke when the user provides an absolute local image path and asks to upload it for the ClawChat account avatar/profile picture. "
+                "This tool does not update or set the account avatar by itself; call `clawchat_update_account_profile` with `avatar_url` after this tool returns a URL."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filePath": {"type": "string", "description": "Absolute local path to the avatar image file"},
+                },
+                "required": ["filePath"],
+            },
+        },
+        _handle_clawchat_upload_avatar_image,
+        is_async=True,
+        description="Upload ClawChat Avatar Image",
         emoji="🖼️",
+    )
+
+    ctx.register_tool(
+        "clawchat_upload_media_file",
+        "clawchat",
+        {
+            "name": "clawchat_upload_media_file",
+            "description": (
+                "Upload a local file or media file to ClawChat media storage (max 20MB) and return the public URL/shareable URL. "
+                "TRIGGER — invoke when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file. "
+                "Do not use this for account avatar changes; use `clawchat_upload_avatar_image` for avatar images."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "filePath": {"type": "string", "description": "Absolute local path to the file to upload"},
+                },
+                "required": ["filePath"],
+            },
+        },
+        _handle_clawchat_upload_media_file,
+        is_async=True,
+        description="Upload ClawChat Media File",
+        emoji="📎",
     )
 
 

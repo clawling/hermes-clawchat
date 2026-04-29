@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import mimetypes
 import os
 import sys
 from dataclasses import dataclass
@@ -12,9 +11,7 @@ from typing import Any
 
 import yaml
 
-from clawchat_gateway.api_client import DEFAULT_BASE_URL, ClawChatApiClient, ClawChatApiError
-
-MAX_AVATAR_BYTES = 20 * 1024 * 1024
+from clawchat_gateway.api_client import DEFAULT_BASE_URL
 
 
 class ProfileConfigError(ValueError):
@@ -66,82 +63,56 @@ def load_profile_config() -> ProfileConfig:
     return ProfileConfig(base_url=base_url, token=token, user_id=user_id, config_path=config_path)
 
 
-def _client(config: ProfileConfig) -> ClawChatApiClient:
-    return ClawChatApiClient(base_url=config.base_url, token=config.token, user_id=config.user_id)
-
-
-async def update_nickname(nickname: str) -> dict[str, Any]:
-    nickname = nickname.strip()
-    if not nickname:
-        raise ProfileConfigError("nickname is required")
-    config = load_profile_config()
-    profile = await _client(config).update_my_profile(nickname=nickname)
-    return {
-        "ok": True,
-        "config_path": str(config.config_path),
-        "user_id": config.user_id,
-        "updated": {"nickname": nickname},
-        "profile": profile,
-    }
-
-
-def _avatar_path(raw_path: str) -> Path:
-    path = Path(raw_path).expanduser()
-    if not path.is_absolute():
-        raise ProfileConfigError("avatar path must be an absolute local file path")
-    if not path.exists():
-        raise ProfileConfigError(f"avatar file does not exist: {path}")
-    if not path.is_file():
-        raise ProfileConfigError(f"avatar path is not a file: {path}")
-    size = path.stat().st_size
-    if size <= 0:
-        raise ProfileConfigError(f"avatar file is empty: {path}")
-    if size > MAX_AVATAR_BYTES:
-        raise ProfileConfigError(f"avatar file exceeds {MAX_AVATAR_BYTES} bytes: {path}")
-    return path
-
-
-async def update_avatar(path: str) -> dict[str, Any]:
-    avatar_path = _avatar_path(path)
-    config = load_profile_config()
-    mime = mimetypes.guess_type(str(avatar_path))[0] or "application/octet-stream"
-    client = _client(config)
-    uploaded = await client.upload_avatar(
-        buffer=avatar_path.read_bytes(),
-        filename=avatar_path.name,
-        mime=mime,
-    )
-    profile = await client.update_my_profile(avatar_url=uploaded.url)
-    return {
-        "ok": True,
-        "config_path": str(config.config_path),
-        "user_id": config.user_id,
-        "uploaded": {"url": uploaded.url, "size": uploaded.size, "mime": uploaded.mime},
-        "updated": {"avatar_url": uploaded.url},
-        "profile": profile,
-    }
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m clawchat_gateway.profile")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    nickname_parser = subparsers.add_parser("nickname", help="Update the ClawChat agent nickname")
-    nickname_parser.add_argument("nickname")
+    subparsers.add_parser("get", help="Fetch the configured ClawChat account profile")
 
-    avatar_parser = subparsers.add_parser("avatar", help="Upload and set the ClawChat agent avatar")
-    avatar_parser.add_argument("path", help="Absolute local avatar file path")
+    get_user_parser = subparsers.add_parser("get-user", help="Fetch a ClawChat user profile by userId")
+    get_user_parser.add_argument("user_id")
+
+    friends_parser = subparsers.add_parser("friends", help="List the configured ClawChat account friends")
+    friends_parser.add_argument("--page", type=int, default=None)
+    friends_parser.add_argument("--page-size", type=int, default=None)
+
+    update_parser = subparsers.add_parser("update", help="Update the configured ClawChat account profile")
+    update_parser.add_argument("--nickname")
+    update_parser.add_argument("--avatar-url")
+    update_parser.add_argument("--bio")
+
+    upload_avatar_parser = subparsers.add_parser("upload-avatar", help="Upload a local avatar image")
+    upload_avatar_parser.add_argument("path", help="Absolute local avatar image path")
+
+    upload_media_parser = subparsers.add_parser("upload-media", help="Upload a local media/file attachment")
+    upload_media_parser.add_argument("path", help="Absolute local file path")
 
     args = parser.parse_args(argv)
-    try:
-        if args.command == "nickname":
-            payload = asyncio.run(update_nickname(args.nickname))
-        elif args.command == "avatar":
-            payload = asyncio.run(update_avatar(args.path))
-        else:
-            parser.error(f"unknown command: {args.command}")
-    except (ProfileConfigError, ClawChatApiError) as exc:
-        print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2), file=sys.stderr)
+    from clawchat_gateway import tools
+
+    if args.command == "get":
+        payload = asyncio.run(tools.get_account_profile())
+    elif args.command == "get-user":
+        payload = asyncio.run(tools.get_user_profile(args.user_id))
+    elif args.command == "friends":
+        payload = asyncio.run(tools.list_account_friends(page=args.page, page_size=args.page_size))
+    elif args.command == "update":
+        payload = asyncio.run(
+            tools.update_account_profile(
+                nickname=args.nickname,
+                avatar_url=args.avatar_url,
+                bio=args.bio,
+            )
+        )
+    elif args.command == "upload-avatar":
+        payload = asyncio.run(tools.upload_avatar_image(args.path))
+    elif args.command == "upload-media":
+        payload = asyncio.run(tools.upload_media_file(args.path))
+    else:
+        parser.error(f"unknown command: {args.command}")
+
+    if payload.get("error"):
+        print(json.dumps(payload, ensure_ascii=False, indent=2), file=sys.stderr)
         return 1
 
     print(json.dumps(payload, ensure_ascii=False, indent=2))
