@@ -30,9 +30,13 @@ python -m clawchat_gateway.install --hermes-dir "$HERMES_DIR" --uninstall
 python -m clawchat_gateway.activate CODE
 python -m clawchat_gateway.activate CODE --base-url http://host:port
 
-# Profile updates (requires activation first)
-python -m clawchat_gateway.profile nickname "NEW_NAME"
-python -m clawchat_gateway.profile avatar /absolute/path/to/image.png
+# Inspect / update profile (requires activation first)
+python -m clawchat_gateway.profile get
+python -m clawchat_gateway.profile get-user <USER_ID>
+python -m clawchat_gateway.profile friends [--page N] [--page-size N]
+python -m clawchat_gateway.profile update [--nickname X] [--avatar-url URL] [--bio X]
+python -m clawchat_gateway.profile upload-avatar /absolute/path/to/image.png
+python -m clawchat_gateway.profile upload-media /absolute/path/to/file
 ```
 
 The Node-side install entrypoint `@newbase-clawchat/hermes-clawchat` (referenced in README.md and after-install.md) is not in this repo — it lives in the npm package and ultimately shells out to `python -m clawchat_gateway.install`.
@@ -41,7 +45,7 @@ The Node-side install entrypoint `@newbase-clawchat/hermes-clawchat` (referenced
 
 ### Two-stage boot
 
-1. **Plugin registration** (`__init__.py` → `register(ctx)`): adds `src/` to `sys.path` (also writes a `.pth` file into site-packages so later imports work without re-registration), registers three Hermes tools (`clawchat_activate`, `clawchat_update_nickname`, `clawchat_update_avatar`), and registers the `skills/clawchat/SKILL.md` skill.
+1. **Plugin registration** (`__init__.py` → `register(ctx)`): adds `src/` to `sys.path` (also writes a `.pth` file into site-packages so later imports work without re-registration), registers seven Hermes tools (`clawchat_activate`, `clawchat_get_account_profile`, `clawchat_get_user_profile`, `clawchat_list_account_friends`, `clawchat_update_account_profile`, `clawchat_upload_avatar_image`, `clawchat_upload_media_file`), and registers the `skills/clawchat/SKILL.md` skill.
 2. **Auto-install** (`_install_gateway()` at the end of `register`): invokes `clawchat_gateway.install.main(...)` which anchor-patches hermes-agent's source files so it knows about the `CLAWCHAT` platform. Failures are logged but do not abort plugin load.
 
 After `clawchat_activate` succeeds, the handler calls `_schedule_gateway_restart()` which spawns a detached `sh -lc 'sleep 2; hermes gateway restart'`. The delay lets the activation response return to the user before the gateway is torn down.
@@ -71,7 +75,8 @@ When editing `build_patches()`, if you change an `anchor` string, pick something
 - **`api_client.py`** — thin HTTP client using `urllib.request` in a thread (no `requests`/`httpx` dep). Default base URL is `http://company.newbaselab.com:10086`; responses must have envelope `{code: 0, data: {...}}` or `ClawChatApiError` is raised. Handles `/v1/agents/connect`, `/v1/users/me`, `/v1/users/{id}`, `/v1/friends`, `/media/upload`, `/v1/files/upload-url`.
 - **`config.py`** — `ClawChatConfig` is a frozen dataclass built from `platform_config.extra`. Supports both snake_case and camelCase keys (`_get_alias`). Do **not** add required fields without also updating `from_platform_config` and the activation writer.
 - **`activate.py`** — calls `/v1/agents/connect` with `platform=hermes`, `type=clawbot`, writes token/user_id/base_url/websocket_url into `~/.hermes/config.yaml` under `platforms.clawchat.extra`, and configures streaming defaults. The websocket URL is derived from the base URL unless the base is the known NewBase host (which uses `DEFAULT_WEBSOCKET_URL` verbatim).
-- **`profile.py`** — nickname/avatar updates. Avatar must be an absolute local path; the command always uploads via `/v1/files/upload-url` first, then PATCHes `/v1/users/me` with the returned URL.
+- **`tools.py`** — async tool handlers for the six new `clawchat_*` tools. Single source of truth shared by the Hermes tool registration in `__init__.py` and the CLI in `profile.py`. Returns result dicts; never raises.
+- **`profile.py`** — CLI subcommands (`get`, `get-user`, `friends`, `update`, `upload-avatar`, `upload-media`) that mirror the `clawchat_*` tool surface. Each subcommand calls the same handler in `tools.py` that the tool registration calls.
 - **`device_id.py`** — stable device ID for the `X-Device-Id` header.
 
 ### Skill (`skills/clawchat/SKILL.md`)

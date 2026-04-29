@@ -29,7 +29,7 @@ hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
 ```
 
-This registers the `clawchat_activate` tool and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
+This registers the seven `clawchat_*` tools and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
 
 ## 4. Patch, activate, and dispatch the restart — one terminal call, then stop
 

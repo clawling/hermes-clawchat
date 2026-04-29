@@ -35,50 +35,43 @@ The actual tools are registered dynamically via `ctx.register_tool` in `register
 |---|---|---|
 | `_tool_error` | `(exc: Exception) -> dict` | Return `{"ok": False, "error": str(exc), "kind": exc.__class__.__name__}`. |
 
-### Gateway restart scheduling
-
-| Function | Signature | Purpose |
-|---|---|---|
-| `_schedule_gateway_restart` | `(delay_seconds: int = 2) -> str` | Spawn detached `sh -lc 'sleep N; HERMES_HOME=... HERMES_DIR=... <hermes> gateway restart'`. Binary is looked up in `$HERMES_DIR/.venv/bin/hermes`, `~/.hermes/hermes-agent/.venv/bin/hermes`, `/opt/hermes/.venv/bin/hermes`, else `hermes` on PATH. Returns the constructed shell command for logging. |
-
 ### Tool handlers
 
-Each handler is `async`, takes `(args: dict, **kw)`, and returns a dict (success path) or `_tool_error(exc)`. They all:
-- read `kw.get("task_id")`,
-- stash it on `handler._last_task_id` (for test observability),
-- log start/done/failure.
+Each handler is `async`, takes `(args: dict, **kw)`, logs `task_id`, and returns a dict. `clawchat_activate` still uses `_tool_error(exc)` for legacy activation failures. The six account/media handlers delegate to `clawchat_gateway.tools` and return that module's result envelope directly.
 
-| Handler | Args | Calls |
+| Handler | Args | Backing |
 |---|---|---|
-| `_handle_clawchat_activate` | `code` (required), `baseUrl` (optional) | `clawchat_gateway.activate.activate(code, base_url)`, then `_schedule_gateway_restart(2)`. Adds `ok`, `restart_scheduled`, `restart_delay_seconds`, `restart_message` to the result. |
-| `_handle_clawchat_update_nickname` | `nickname` | `clawchat_gateway.profile.update_nickname(nickname)` |
-| `_handle_clawchat_update_avatar` | `filePath` | `clawchat_gateway.profile.update_avatar(filePath)` |
+| `_handle_clawchat_activate` | `code`, optional `baseUrl` | `clawchat_gateway.activate.activate` |
+| `_handle_clawchat_get_account_profile` | — | `clawchat_gateway.tools.get_account_profile` |
+| `_handle_clawchat_get_user_profile` | `userId` | `clawchat_gateway.tools.get_user_profile` |
+| `_handle_clawchat_list_account_friends` | optional `page`, optional `pageSize` | `clawchat_gateway.tools.list_account_friends` |
+| `_handle_clawchat_update_account_profile` | optional `nickname`, optional `avatar_url`, optional `bio` (>=1) | `clawchat_gateway.tools.update_account_profile` |
+| `_handle_clawchat_upload_avatar_image` | `filePath` | `clawchat_gateway.tools.upload_avatar_image` |
+| `_handle_clawchat_upload_media_file` | `filePath` | `clawchat_gateway.tools.upload_media_file` |
 
 ### Tool registration
 
-`_register_tools(ctx)` registers three tools with fixed JSON schemas. The `name` inside each schema matches the registration key. Description text is intentionally prescriptive — it's surfaced to the LLM and must stay aligned with `skills/clawchat/SKILL.md`:
+`_register_tools(ctx)` registers seven tools with fixed JSON schemas. The `name` inside each schema matches the registration key. Description text is intentionally prescriptive because it is surfaced to the LLM:
 
-- `clawchat_activate` (🔑) — emphasises "always use this when the user says a ClawChat activation code"; includes Chinese examples; tells the model not to call `connect-codes`.
-- `clawchat_update_nickname` (🏷️)
-- `clawchat_update_avatar` (🖼️) — emphasises that the tool uploads first via `/v1/files/upload-url`, then patches the profile; forbids HTTP URLs or relative paths.
+- `clawchat_activate` (🔑) — exchange an activation code for credentials.
+- `clawchat_get_account_profile` (👤) — fetch the configured account profile.
+- `clawchat_get_user_profile` (🧑) — fetch a public profile by explicit `userId`.
+- `clawchat_list_account_friends` (👥) — list account friends with pagination.
+- `clawchat_update_account_profile` (✏️) — update nickname, avatar URL, and/or bio.
+- `clawchat_upload_avatar_image` (🖼️) — upload a local avatar image and return its URL.
+- `clawchat_upload_media_file` (📎) — upload a local file/media attachment and return its URL.
 
 ### `register(ctx)` — plugin entrypoint
 
 Order of operations:
 
 1. `_register_python_path(_plugin_dir() / "src")`
-2. `_register_tools(ctx)`
-3. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
-4. Try `_install_gateway()`; on `Exception`, log a warning and continue.
+2. `_install_gateway()` applies the hermes-agent patches.
+3. `_register_tools(ctx)`
+4. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
 
 ## `src/clawchat_gateway/__init__.py`
 
 Public package surface:
 
-```python
-from clawchat_gateway.adapter import ClawChatAdapter, check_clawchat_requirements
-__version__ = "0.1.0"
-__all__ = ["__version__", "ClawChatAdapter", "check_clawchat_requirements"]
-```
-
-Importing the package forces `adapter.py` to load, which in turn imports `gateway.platforms.base` — make sure hermes-agent stubs are installed (`tests/fake_hermes.py`) if you import this from tests.
+The package `__init__` intentionally exposes only `__version__`. It does not eagerly import `adapter.py`, because that module binds hermes-agent's `gateway.config.Platform` at import time and must only be loaded after the plugin has applied its platform patch.

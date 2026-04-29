@@ -1,105 +1,105 @@
 # Profile — `src/clawchat_gateway/profile.py`
 
-Update the ClawChat agent nickname or avatar. Both flows require prior activation (reads `token` + `user_id` from `$HERMES_HOME/config.yaml`).
+`profile.py` provides the local CLI for the ClawChat account/profile tool surface. It no longer owns profile-update logic directly; each subcommand delegates to the matching async handler in `clawchat_gateway.tools`.
 
-## Constants
+## Configuration Loader
 
-| Name | Value |
+`load_profile_config()` remains public and is used by `tools.py`.
+
+| Function | Purpose |
 |---|---|
-| `MAX_AVATAR_BYTES` | `20 * 1024 * 1024` (20 MiB hard cap on avatar uploads). |
+| `_hermes_home()` | Resolve `$HERMES_HOME` or default to `~/.hermes`. |
+| `_load_yaml(path)` | Load `config.yaml`, raising `ProfileConfigError` when it is missing, unreadable, or not an object. |
+| `load_profile_config()` | Read `platforms.clawchat.extra`, require non-empty `token` and `user_id`, default `base_url` to `DEFAULT_BASE_URL`, and return `ProfileConfig`. |
 
-## Exceptions
+`ProfileConfigError` is raised only by the loader helpers. The CLI handlers catch no exceptions from tools directly because the six tool handlers return error dictionaries instead of raising.
 
-### `ProfileConfigError`
+## CLI
 
-`class ProfileConfigError(ValueError)` — raised when:
+All commands use:
 
-- `config.yaml` is missing (`"activate ClawChat first"`),
-- `config.yaml` fails to parse,
-- `config.yaml` is not a dict at the top level,
-- `platforms.clawchat.extra.token` or `.user_id` is missing,
-- nickname is empty,
-- the avatar path is relative, missing, not a file, empty, or larger than `MAX_AVATAR_BYTES`.
-
-## Value objects
-
-### `ProfileConfig`
-
-```python
-@dataclass(frozen=True)
-class ProfileConfig:
-    base_url: str
-    token: str
-    user_id: str
-    config_path: Path
+```bash
+python -m clawchat_gateway.profile <subcommand>
 ```
 
-## Loaders
+On success, the CLI prints pretty JSON to stdout and exits 0. If the handler result contains an `"error"` key, the same JSON is printed to stderr and the process exits 1.
 
-| Function | Signature | Purpose |
-|---|---|---|
-| `_hermes_home` | `() -> Path` | `$HERMES_HOME` or `~/.hermes`. |
-| `_load_yaml` | `(path: Path) -> dict` | Safe-load, raising `ProfileConfigError` if the file is missing, unreadable, or non-object. |
-| `load_profile_config` | `() -> ProfileConfig` | Build a `ProfileConfig` from `~/.hermes/config.yaml`. `base_url` falls back to `DEFAULT_BASE_URL`. Validates `token` / `user_id` are present and non-empty. |
-| `_client` | `(config: ProfileConfig) -> ClawChatApiClient` | Build a client with config's `base_url` / `token` / `user_id`. |
-| `_avatar_path` | `(raw_path: str) -> Path` | Expand `~`, require absolute, existing, non-empty, ≤ `MAX_AVATAR_BYTES`, is a file — raise `ProfileConfigError` otherwise. |
+### `get`
 
-## Update flows
+Fetch the configured ClawChat account profile.
 
-### `update_nickname`
-
-```python
-async update_nickname(nickname: str) -> dict
+```bash
+python -m clawchat_gateway.profile get
 ```
 
-1. Strip, raise if empty.
-2. Load config.
-3. `await client.update_my_profile(nickname=nickname)` — PATCH `/v1/users/me`.
-4. Return:
+Backing handler: `tools.get_account_profile()`.
 
-```python
+### `get-user <userId>`
+
+Fetch another ClawChat user's public profile by explicit user id.
+
+```bash
+python -m clawchat_gateway.profile get-user user_123
+```
+
+Backing handler: `tools.get_user_profile(user_id)`.
+
+### `friends`
+
+List the configured account's friends. Pagination defaults to `page=1` and `pageSize=20`.
+
+```bash
+python -m clawchat_gateway.profile friends
+python -m clawchat_gateway.profile friends --page 2 --page-size 50
+```
+
+Backing handler: `tools.list_account_friends(page=..., page_size=...)`.
+
+### `update`
+
+Update one or more account profile fields. At least one option is required.
+
+```bash
+python -m clawchat_gateway.profile update --nickname "Hermes Bot"
+python -m clawchat_gateway.profile update --avatar-url https://cdn.example/avatar.png --bio "Available on ClawChat"
+```
+
+Backing handler: `tools.update_account_profile(nickname=..., avatar_url=..., bio=...)`.
+
+### `upload-avatar <path>`
+
+Upload a local image file to avatar storage and return the hosted URL. This command does not set the account avatar by itself; pass the returned URL to `update --avatar-url`.
+
+```bash
+python -m clawchat_gateway.profile upload-avatar /absolute/path/to/avatar.png
+```
+
+Backing handler: `tools.upload_avatar_image(path)`.
+
+### `upload-media <path>`
+
+Upload a local file or media attachment and return the public URL.
+
+```bash
+python -m clawchat_gateway.profile upload-media /absolute/path/to/file.pdf
+```
+
+Backing handler: `tools.upload_media_file(path)`.
+
+## Error Envelope
+
+Tool and CLI errors share the same shape:
+
+```json
 {
-  "ok": True,
-  "config_path": str,
-  "user_id": str,
-  "updated": {"nickname": str},
-  "profile": dict,   # server response
+  "error": "config|validation|auth|api|transport|unknown",
+  "message": "...",
+  "meta": {
+    "status": 401,
+    "path": "/v1/users/me",
+    "code": 7
+  }
 }
 ```
 
-### `update_avatar`
-
-```python
-async update_avatar(path: str) -> dict
-```
-
-1. Validate path via `_avatar_path`.
-2. Guess MIME via `mimetypes`, fall back to `application/octet-stream`.
-3. `await client.upload_avatar(buffer, filename, mime)` → `UploadResult` (POST `/v1/files/upload-url`).
-4. `await client.update_my_profile(avatar_url=uploaded.url)`.
-5. Return:
-
-```python
-{
-  "ok": True,
-  "config_path": str,
-  "user_id": str,
-  "uploaded": {"url": str, "size": int, "mime": str},
-  "updated": {"avatar_url": str},
-  "profile": dict,
-}
-```
-
-Sequence contract: avatar update **must** upload first, then patch the profile. HTTP URLs and relative paths are rejected up-front.
-
-## CLI — `main(argv=None) -> int`
-
-```
-usage: python -m clawchat_gateway.profile {nickname,avatar} ...
-
-subcommands:
-  nickname   python -m clawchat_gateway.profile nickname "NEW NAME"
-  avatar     python -m clawchat_gateway.profile avatar /absolute/path/to/image.png
-```
-
-Wraps `update_nickname` / `update_avatar` in `asyncio.run(...)`. `ProfileConfigError` and `ClawChatApiError` are caught and printed as `{"ok": false, "error": "..."}` on stderr with exit code 1. Other exceptions propagate.
+`meta` is omitted when there is no status/path/code context. See `docs/superpowers/specs/2026-04-29-clawchat-tools-parity-design.md` for the full design rationale.

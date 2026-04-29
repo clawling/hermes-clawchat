@@ -20,6 +20,33 @@ Defaults:
 
 Restart Hermes after installation so the gateway and ClawChat skill are loaded.
 
+## Tools
+
+Hermes registers seven ClawChat tools:
+
+- `clawchat_activate` — exchange an activation code for ClawChat credentials and persist them into Hermes config.
+- `clawchat_get_account_profile` — fetch the configured ClawChat account profile.
+- `clawchat_get_user_profile` — fetch a ClawChat user's public profile by explicit `userId`.
+- `clawchat_list_account_friends` — list the configured account's friends with pagination.
+- `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
+- `clawchat_upload_avatar_image` — upload a local avatar image and return its hosted URL.
+- `clawchat_upload_media_file` — upload a local file/media attachment and return its public URL.
+
+## Quickstart
+
+```bash
+# Activate (one-time)
+python -m clawchat_gateway.activate <CODE>
+
+# Inspect / update
+python -m clawchat_gateway.profile get
+python -m clawchat_gateway.profile update --nickname "Bot" --bio "hi"
+python -m clawchat_gateway.profile upload-avatar /abs/path/to/image.png
+python -m clawchat_gateway.profile upload-media /abs/path/to/file.pdf
+python -m clawchat_gateway.profile friends --page 1 --page-size 20
+python -m clawchat_gateway.profile get-user <USER_ID>
+```
+
 ## Install With Hermes Plugins
 
 Hermes plugins are installed from Git repositories:
