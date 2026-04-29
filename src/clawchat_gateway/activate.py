@@ -106,8 +106,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m clawchat_gateway.activate")
     parser.add_argument("code", help="ClawChat activation code")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument(
+        "--no-restart",
+        action="store_true",
+        help="Skip the detached `hermes gateway restart` dispatched after activation.",
+    )
     args = parser.parse_args(argv)
     payload = asyncio.run(activate(args.code.strip(), base_url=args.base_url))
+    if not args.no_restart:
+        from clawchat_gateway.restart import schedule_gateway_restart
+
+        payload["restart_scheduled"] = True
+        payload["restart_delay_seconds"] = 2
+        payload["restart_command"] = schedule_gateway_restart(delay_seconds=2)
+        payload["restart_message"] = (
+            "ClawChat activation saved. Hermes gateway restart dispatched in the background."
+        )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 

@@ -4,7 +4,6 @@ import importlib
 import logging
 import os
 import site
-import subprocess
 import sys
 from pathlib import Path
 
@@ -109,34 +108,6 @@ def _tool_error(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc), "kind": exc.__class__.__name__}
 
 
-def _schedule_gateway_restart(delay_seconds: int = 2) -> str:
-    hermes_dir = _hermes_dir()
-    hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
-
-    candidates = [
-        hermes_dir / ".venv" / "bin" / "hermes",
-        Path.home() / ".hermes" / "hermes-agent" / ".venv" / "bin" / "hermes",
-        Path("/opt/hermes/.venv/bin/hermes"),
-    ]
-    hermes_bin = next((path for path in candidates if path.exists()), None)
-    if hermes_bin is None:
-        hermes_bin = Path("hermes")
-
-    command = (
-        f"sleep {int(delay_seconds)}; "
-        f"HERMES_HOME={str(hermes_home)!r} "
-        f"HERMES_DIR={str(hermes_dir)!r} "
-        f"{str(hermes_bin)!r} gateway restart"
-    )
-    subprocess.Popen(
-        ["sh", "-lc", command],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    return command
-
-
 async def _handle_clawchat_activate(args, **kw):
     task_id = kw.get("task_id") or "default"
     _handle_clawchat_activate._last_task_id = task_id
@@ -144,11 +115,12 @@ async def _handle_clawchat_activate(args, **kw):
     try:
         from clawchat_gateway.activate import activate
         from clawchat_gateway.api_client import DEFAULT_BASE_URL
+        from clawchat_gateway.restart import schedule_gateway_restart
 
         base_url = str(args.get("baseUrl") or "").strip() or DEFAULT_BASE_URL
         result = await activate(str(args.get("code") or "").strip(), base_url=base_url)
         result["ok"] = True
-        restart_command = _schedule_gateway_restart(delay_seconds=2)
+        restart_command = schedule_gateway_restart(delay_seconds=2)
         result["restart_scheduled"] = True
         result["restart_delay_seconds"] = 2
         result["restart_message"] = "ClawChat activation is saved. Hermes restart has been scheduled in the background."
