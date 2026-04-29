@@ -10,10 +10,14 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 
 1. Hermes loads the repo root as a plugin and calls `register(ctx)` in `__init__.py`.
 2. `_register_python_path(src)` inserts `src/` onto `sys.path` and drops a `clawchat_gateway_src.pth` file in a writable site-packages dir so subprocess Pythons also find the package.
-3. `_register_tools(ctx)` registers three tools:
-   - `clawchat_activate`
-   - `clawchat_update_nickname`
-   - `clawchat_update_avatar`
+3. `_register_tools(ctx)` registers seven tools:
+   - `clawchat_activate` — exchange an activation code for ClawChat credentials.
+   - `clawchat_get_account_profile` — fetch the configured account profile.
+   - `clawchat_get_user_profile` — fetch a public profile by explicit `userId`.
+   - `clawchat_list_account_friends` — list friends with pagination.
+   - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
+   - `clawchat_upload_avatar_image` — upload a local avatar image and return a hosted URL.
+   - `clawchat_upload_media_file` — upload a local media/file attachment and return a public URL.
 4. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
 5. `_install_gateway()` invokes `clawchat_gateway.install.main(["--hermes-dir", ...])`, which anchor-patches hermes-agent's source files (idempotent). Failures are logged but do not abort plugin load.
 
@@ -23,7 +27,7 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 Hermes LLM  <---- tool results ----  _handle_clawchat_* handlers  (in __init__.py)
     |                                        ^
     v                                        |
-  (platform: CLAWCHAT)              clawchat_gateway.activate / profile
+  (platform: CLAWCHAT)              clawchat_gateway.activate / tools / profile
     |
     v
 ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat server
