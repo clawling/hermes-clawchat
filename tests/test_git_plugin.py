@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
-import sys
-from types import ModuleType
 from pathlib import Path
 
 
@@ -43,29 +41,37 @@ def test_git_plugin_registers_tools_and_skill(monkeypatch):
 
     assert set(ctx.tools) == {
         "clawchat_activate",
-        "clawchat_update_nickname",
-        "clawchat_update_avatar",
+        "clawchat_get_account_profile",
+        "clawchat_get_user_profile",
+        "clawchat_list_account_friends",
+        "clawchat_update_account_profile",
+        "clawchat_upload_avatar_image",
+        "clawchat_upload_media_file",
     }
     assert ctx.tools["clawchat_activate"]["toolset"] == "clawchat"
     assert ctx.tools["clawchat_activate"]["is_async"] is True
-    assert ctx.tools["clawchat_update_nickname"]["is_async"] is True
-    assert ctx.tools["clawchat_update_avatar"]["is_async"] is True
-    assert "upload" in ctx.tools["clawchat_update_avatar"]["schema"]["description"]
-    assert "/v1/files/upload-url" in ctx.tools["clawchat_update_avatar"]["schema"]["description"]
+    assert ctx.tools["clawchat_update_account_profile"]["is_async"] is True
+    assert ctx.tools["clawchat_upload_avatar_image"]["is_async"] is True
+    assert "upload" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
+    assert "clawchat_update_account_profile" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
     assert "clawchat" in ctx.skills
 
 
 def test_git_plugin_handlers_accept_task_id(monkeypatch):
     module = _load_root_plugin()
 
-    async def fake_update_nickname(nickname):
-        return {"updated": {"nickname": nickname}}
+    from clawchat_gateway import tools
 
-    fake_profile = ModuleType("clawchat_gateway.profile")
-    fake_profile.update_nickname = fake_update_nickname
-    monkeypatch.setitem(sys.modules, "clawchat_gateway.profile", fake_profile)
+    async def fake_update_account_profile(nickname=None, avatar_url=None, bio=None):
+        return {"updated": {"nickname": nickname, "avatar_url": avatar_url, "bio": bio}}
 
-    result = asyncio.run(module._handle_clawchat_update_nickname({"nickname": "bot"}, task_id="trace-123"))
+    monkeypatch.setattr(tools, "update_account_profile", fake_update_account_profile)
 
-    assert result == {"updated": {"nickname": "bot"}}
-    assert module._handle_clawchat_update_nickname._last_task_id == "trace-123"
+    result = asyncio.run(
+        module._handle_clawchat_update_account_profile(
+            {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"},
+            task_id="trace-123",
+        )
+    )
+
+    assert result == {"updated": {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"}}
