@@ -294,6 +294,16 @@ def build_patches(hermes_dir: Path) -> List[Patch]:
             payload='"CLAWCHAT_ALLOW_ALL_USERS", ',
             insert_after=False,
             indent_to_anchor=False,
+            soft_fail=True,
+        ),
+        Patch(
+            id="startup_allow_all_yuanbao",
+            file=run,
+            anchor='"YUANBAO_ALLOW_ALL_USERS")',
+            payload='"CLAWCHAT_ALLOW_ALL_USERS",\n',
+            insert_after=False,
+            indent_to_anchor=True,
+            soft_fail=True,
         ),
         Patch(
             id="update_allowed_platforms",

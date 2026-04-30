@@ -41,6 +41,7 @@ def test_build_patches_contains_expected_ids(tmp_path: Path) -> None:
         "cron_platform_map",
         "startup_any_allowlist",
         "startup_allow_all",
+        "startup_allow_all_yuanbao",
         "update_allowed_platforms",
     } <= patch_ids
 
@@ -108,6 +109,26 @@ def test_cron_scheduler_patches_insert_clawchat(tmp_path: Path) -> None:
     assert '"clawchat": Platform.CLAWCHAT,\n' in content
     assert patch_applied(known) is True
     assert patch_applied(pmap) is True
+
+
+def test_startup_allow_all_patch_handles_yuanbao_allow_all_anchor(tmp_path: Path) -> None:
+    target = tmp_path / "run.py"
+    target.write_text(
+        "        _allow_all = any(\n"
+        "            os.getenv(v, '').lower() in ('true', '1', 'yes')\n"
+        "            for v in (\"TELEGRAM_ALLOW_ALL_USERS\",\n"
+        "                       \"QQ_ALLOW_ALL_USERS\",\n"
+        "                       \"YUANBAO_ALLOW_ALL_USERS\")\n"
+        "        )\n"
+    )
+    patch = next(patch for patch in build_patches(tmp_path) if patch.id == "startup_allow_all_yuanbao")
+    patch.file = str(target)
+
+    assert apply_patch(patch) is True
+    content = target.read_text()
+    assert '"CLAWCHAT_ALLOW_ALL_USERS",\n' in content
+    assert content.index('"QQ_ALLOW_ALL_USERS"') < content.index('"CLAWCHAT_ALLOW_ALL_USERS"')
+    assert content.index('"CLAWCHAT_ALLOW_ALL_USERS"') < content.index('"YUANBAO_ALLOW_ALL_USERS"')
 
 
 def test_install_state_round_trip(tmp_path: Path) -> None:

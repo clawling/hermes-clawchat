@@ -18,11 +18,11 @@ Use this skill to run Hermes ClawChat E2E tests against Docker images. Core prin
 | Logs | Write `.e2e/logs/<tag>-<test-name>.log`. |
 | Image tag | Use the Docker tag as `<tag>`, e.g. `latest`, `v2026.4.23`. |
 | Code source | Fetch `data.code` from `http://company.newbaselab.com:19001/v1/agents/connect-codes`. |
-| adb | Ask the user once before any adb test. Do not probe `adb devices` first. |
+| adb | Ask once before adb. After consent, find adb and follow `android-phone-activation.md`. |
 
 ## Required Flow
 
-1. Identify the single behavior under test: activation, profile query, nickname update, friends list, media upload, or Android real-chat activation.
+1. Identify the single behavior under test: activation, profile query, nickname update, friends list, media upload, or Android phone activation.
 2. If Android adb might be involved, ask: `这次是否需要 Android adb 真实聊天测试？` Wait for the answer.
 3. For each image in `.e2e/images.tsv`, create a fresh isolated home from `.e2e/hermes-home-backup/` under `.e2e/runs/<tag>/<test-name>/home/`.
 4. Start the image with that home mounted as `HERMES_HOME=/opt/data` and the plugin repo mounted into the container.
@@ -44,9 +44,9 @@ Success requires `config.yaml` in that image's run home to contain `platforms.cl
 
 ## Android adb Test
 
-Run this only after the user says adb is needed. The user will connect a phone. Verify `adb devices` only after consent.
+Run this only after the user says adb is needed. The user will connect a phone. Verify `adb devices` only after consent. Follow `android-phone-activation.md` for the detailed phone flow.
 
-For Android real-chat activation, the single behavior is: get an activation code through the phone flow, send the activation message from the phone ClawChat app, and confirm the phone receives a normal Hermes reply. Success requires both Hermes config activation and a visible phone reply. Do not add profile, nickname, friends, or media checks to this same run.
+For Android phone activation, the single behavior is: create a Hermes Agent from the phone and activate Hermes with the phone-generated code. Sending one simple phone message is only the confirmation that activation produced a usable ClawChat connection, not a separate chat feature test. Before touching the phone UI, verify the Hermes container, gateway, and ClawChat WebSocket are running. If the phone appears stuck on loading or no reply appears, first go back to the previous ClawChat page and re-enter the Agent chat, then retry one simple message. Success requires both Hermes config activation and one visible phone reply. Do not add profile, nickname, friends, or media checks to this same run.
 
 ## Example
 
@@ -66,6 +66,7 @@ assertion: home/config.yaml has clawchat token/user_id/base_url/websocket_url
 | `One smoke bundle is faster.` | Bundles hide root cause and violate one behavior per run. |
 | `adb devices is harmless.` | The user required an adb decision first. Ask before probing. |
 | `Share one run home unless it fails.` | Shared homes cause cross-image contamination. Always isolate first. |
+| `The Agent is online, so activate passed.` | Online only proves connection. Activation success also requires one visible phone reply. |
 
 ## Red Flags
 
@@ -73,7 +74,9 @@ assertion: home/config.yaml has clawchat token/user_id/base_url/websocket_url
 - More than one ClawChat tool or user-visible feature in a single run.
 - Reusing `.e2e/run-home` or one run home across multiple image tags.
 - Running `adb devices` before asking the user whether adb is needed.
+- Opening the phone app before the Hermes gateway and ClawChat WebSocket are ready.
 - Marking Android success without checking the phone received a Hermes reply.
+- Skipping the back-and-reenter recovery when the phone chat appears stuck.
 
 ## Common Mistakes
 
