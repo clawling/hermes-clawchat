@@ -39,7 +39,7 @@ python -m clawchat_gateway.profile upload-avatar /absolute/path/to/image.png
 python -m clawchat_gateway.profile upload-media /absolute/path/to/file
 ```
 
-The Node-side install entrypoint `@newbase-clawchat/hermes-clawchat` (referenced in README.md and after-install.md) is not in this repo — it lives in the npm package and ultimately shells out to `python -m clawchat_gateway.install`.
+The Node-side install entrypoint `@newbase-clawchat/hermes-clawchat` (referenced in README.md) is not in this repo — it lives in the npm package and ultimately shells out to `python -m clawchat_gateway.install`.
 
 ## Architecture
 
@@ -68,7 +68,7 @@ When editing `build_patches()`, if you change an `anchor` string, pick something
 
 - **`adapter.py`** — `ClawChatAdapter(BasePlatformAdapter)`. Implements `connect/disconnect`, `send`, `edit_message`, `on_run_complete`, `send_typing`, `send_image[_file]`. Holds a map of `_ActiveRun` per in-flight streaming message and uses the `stream` reply mode when available (falls back to a single `message.reply` for media-only or non-stream configs). Filters `<think>` and tool-call blocks out of visible content based on `show_think_output`/`show_tools_output`. Attaches the `clawchat` skill to inbound messages whose text matches `_ACTIVATION_INTENT_RE` so Hermes proactively picks up activation phrases.
 - **`connection.py`** — `ClawChatConnection` owns the WebSocket lifecycle: a supervisor task with exponential backoff + jitter reconnect, challenge/`hello-ok` handshake (path `/v1/ws` uses the real-time subprotocol and skips the legacy handshake), an outbound send queue that flushes once `READY`, and a read loop that dispatches `message.send` frames to the adapter. State transitions are reported via `on_state_change`.
-- **`protocol.py`** — pure frame builders (`message.created`, `message.add`, `message.done`, `message.reply`, `typing.update`, `connect`) and `compute_client_sign` (HMAC-SHA256 of `client_id|nonce` keyed by token).
+- **`protocol.py`** — pure frame builders (`message.created`, `message.add`, `message.done`, `message.reply`, `typing.update`, `connect`) and `compute_client_sign` (HMAC-SHA256 of `client_id|nonce` keyed by token). The wire protocol reference is `docs/clawchat-protocal.md`.
 - **`inbound.py`** — parses a `message.send` envelope into `InboundMessage`. In `group` chat + `group_mode=mention`, drops frames where the bot's `user_id` is not in `context.mentions`.
 - **`stream_buffer.py`** — `compute_delta(last_text, new_text)` for streaming appends.
 - **`media_runtime.py`** — outbound uploads via `/media/upload`, inbound downloads into `media_download_dir` (default `/tmp/clawchat-media`). Local outbound paths must be under `media_local_roots` (`ensure_allowed_local_path`).

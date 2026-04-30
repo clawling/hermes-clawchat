@@ -12,7 +12,7 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 | `src/clawchat_gateway/install.py` | Anchor-patch installer for hermes-agent | [installer.md](./installer.md) |
 | `src/clawchat_gateway/adapter.py` | `ClawChatAdapter` — hermes-agent platform adapter | [adapter.md](./adapter.md) |
 | `src/clawchat_gateway/connection.py` | WebSocket supervisor, handshake, send queue | [connection.md](./connection.md) |
-| `src/clawchat_gateway/protocol.py` | Frame encode/decode + builder functions | [protocol.md](./protocol.md) |
+| `src/clawchat_gateway/protocol.py` | Frame encode/decode + builder functions | [clawchat-protocal.md](./clawchat-protocal.md) |
 | `src/clawchat_gateway/config.py` | `ClawChatConfig` dataclass | [config.md](./config.md) |
 | `src/clawchat_gateway/api_client.py` | REST HTTP client (`ClawChatApiClient`) | [api-client.md](./api-client.md) |
 | `src/clawchat_gateway/activate.py` | Activation CLI (`/v1/agents/connect`) | [activate.md](./activate.md) |
