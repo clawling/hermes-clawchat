@@ -8,3 +8,7 @@ dist/
 .DS_Store
 *.tgz
 tmp
+.e2e/hermes-home-backup/
+.e2e/run-home/
+.e2e/runs/
+.e2e/logs/
