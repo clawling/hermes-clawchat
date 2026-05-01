@@ -203,6 +203,24 @@ async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
         await conn.stop()
 
 
+async def test_realtime_connect_payload_includes_device_id(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    monkeypatch.setattr("clawchat_gateway.connection.get_device_id", lambda: "hermes-test-device")
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    await conn.start()
+    try:
+        req = await _complete_handshake(srv)
+        assert req["payload"]["device_id"] == "hermes-test-device"
+        assert req["payload"]["capabilities"] == {"protocol": "clawchat.v2"}
+    finally:
+        await conn.stop()
+
+
 async def test_wrong_request_id_times_out_without_ready(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
@@ -312,6 +330,34 @@ async def test_connection_logs_receive_dispatch_and_send(monkeypatch, caplog):
     assert any("message_keys=['context', 'fragments']" in message for message in messages)
     assert any("body_type=NoneType" in message for message in messages)
     assert any("clawchat ws send event=message.reply id=out-1" in message for message in messages)
+
+
+async def test_ready_dispatches_message_reply(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    seen_messages = []
+
+    async def on_message(frame):
+        seen_messages.append(frame)
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    await conn.start()
+    try:
+        await _complete_handshake(srv)
+        await _wait_until(lambda: conn.is_ready)
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "message.reply",
+                "chat_id": "u1",
+                "sender": {"id": "u1"},
+                "payload": {"message": {"context": {}, "fragments": [{"kind": "text", "text": "hi"}]}},
+            }
+        )
+        await _wait_until(lambda: len(seen_messages) == 1)
+        assert seen_messages[0]["event"] == "message.reply"
+    finally:
+        await conn.stop()
 
 
 async def test_ready_transition_preserves_backlog_ordering(monkeypatch):

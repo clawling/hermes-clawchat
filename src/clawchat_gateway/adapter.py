@@ -30,6 +30,7 @@ from clawchat_gateway.protocol import (
     build_message_add_event,
     build_message_created_event,
     build_message_done_event,
+    build_message_failed_event,
     build_message_reply_event,
     build_typing_update_event,
     new_frame_id,
@@ -83,7 +84,7 @@ class _ActiveRun:
     started_order: int
     last_text: str = ""
     reply_to_message_id: str | None = None
-    sequence: int = 0
+    sequence: int = -1
 
 
 def check_clawchat_requirements(platform_config: Any) -> bool:
@@ -444,10 +445,41 @@ class ClawChatAdapter(BasePlatformAdapter):
                 message_id=run.message_id,
                 fragments=await self._build_fragments(run.last_text),
                 reply_to_message_id=run.reply_to_message_id,
+                include_message_id=True,
             )
         )
         logger.info(
             "clawchat stream done queued chat_id=%s message_id=%s",
+            chat_id,
+            run.message_id,
+        )
+
+    async def on_run_failed(
+        self,
+        chat_id: str,
+        error: str,
+        message_id: str | None = None,
+    ) -> None:
+        run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
+        if run is None:
+            logger.warning(
+                "clawchat run failed skipped chat_id=%s message_id=%s reason=no_active_run",
+                chat_id,
+                message_id,
+            )
+            return
+        self._discard_run(run)
+        await self._connection.send_frame(
+            build_message_failed_event(
+                chat_id=chat_id,
+                chat_type=run.chat_type,
+                message_id=run.message_id,
+                sequence=max(run.sequence, 0),
+                reason=error,
+            )
+        )
+        logger.info(
+            "clawchat stream failed queued chat_id=%s message_id=%s",
             chat_id,
             run.message_id,
         )

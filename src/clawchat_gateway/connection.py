@@ -284,7 +284,7 @@ class ClawChatConnection:
         ):
             await self._maybe_finish_handshake(frame)
             return
-        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "message.send":
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply"}:
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
             fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
@@ -292,7 +292,8 @@ class ClawChatConnection:
             body_keys = sorted(body.keys()) if isinstance(body, dict) else []
             body_len = len(body) if isinstance(body, (str, list, dict)) else 0
             logger.info(
-                "clawchat ws dispatch message.send chat_id=%s sender_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                "clawchat ws dispatch %s chat_id=%s sender_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                frame.get("event"),
                 frame.get("chat_id"),
                 (frame.get("sender") or {}).get("id") if isinstance(frame.get("sender"), dict) else None,
                 len(fragments),
@@ -325,6 +326,8 @@ class ClawChatConnection:
             client_id=CLIENT_ID,
             client_version=CLIENT_VERSION,
             sign=sign,
+            device_id=get_device_id(),
+            capabilities={"protocol": "clawchat.v2"},
         )
         connect_req["payload"]["nonce"] = nonce
         logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)

@@ -216,7 +216,7 @@ async def test_send_emits_message_reply_for_static_mode():
     assert result.success is True
     assert adapter._connection.sent_frames[0]["event"] == "message.reply"
     assert adapter._connection.sent_frames[0]["version"] == "2"
-    assert adapter._connection.sent_frames[0]["payload"]["message_id"] == result.message_id
+    assert "message_id" not in adapter._connection.sent_frames[0]["payload"]
     assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "hi"}
     ]
@@ -356,7 +356,7 @@ async def test_send_emits_message_created_then_add_for_stream_mode():
     assert adapter._connection.sent_frames[0]["version"] == "2"
     assert adapter._connection.sent_frames[0]["payload"]["message_id"] == message_id
     assert adapter._connection.sent_frames[1]["payload"]["message_id"] == message_id
-    assert adapter._connection.sent_frames[1]["payload"]["sequence"] == 1
+    assert adapter._connection.sent_frames[1]["payload"]["sequence"] == 0
     assert (
         adapter._connection.sent_frames[1]["payload"]["fragments"][0]["delta"]
         == "hello"
@@ -401,7 +401,7 @@ async def test_edit_message_emits_message_add_for_stream_mode():
     assert result.success is True
     assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.add"]
     assert adapter._connection.sent_frames[0]["payload"]["message_id"] == first.message_id
-    assert adapter._connection.sent_frames[0]["payload"]["sequence"] == 2
+    assert adapter._connection.sent_frames[0]["payload"]["sequence"] == 1
     fragment = adapter._connection.sent_frames[0]["payload"]["fragments"][0]
     assert fragment["text"] == "hello world"
     assert fragment["delta"] == " world"
@@ -491,6 +491,21 @@ async def test_on_run_complete_emits_message_done_without_static_reply():
     assert adapter._connection.sent_frames[2]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "hello world"}
     ]
+    assert first.message_id not in adapter._active_runs_by_id
+
+
+async def test_on_run_failed_emits_message_failed_and_cleans_run():
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hello")
+    adapter._connection.sent_frames.clear()
+
+    await adapter.on_run_failed(chat_id="u1", error="boom", message_id=first.message_id)
+
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.failed"]
+    failed = adapter._connection.sent_frames[0]
+    assert failed["payload"]["message_id"] == first.message_id
+    assert failed["payload"]["sequence"] == 0
+    assert failed["payload"]["streaming"]["status"] == "failed"
     assert first.message_id not in adapter._active_runs_by_id
 
 
