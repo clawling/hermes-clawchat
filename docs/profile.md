@@ -9,8 +9,11 @@
 | Function | Purpose |
 |---|---|
 | `_hermes_home()` | Resolve `$HERMES_HOME` or default to `~/.hermes`. |
+| `_load_env(path)` | Parse simple `KEY=value` / `export KEY=value` lines from `$HERMES_HOME/.env`; missing file returns `{}`. |
 | `_load_yaml(path)` | Load `config.yaml`, raising `ProfileConfigError` when it is missing, unreadable, or not an object. |
-| `load_profile_config()` | Read `platforms.clawchat.extra`, require non-empty `token` and `user_id`, default `base_url` to `DEFAULT_BASE_URL`, and return `ProfileConfig`. |
+| `load_profile_config()` | Read process env first, then `$HERMES_HOME/.env`, then `platforms.clawchat.extra`; require non-empty `token` and `user_id`, default `base_url` to `DEFAULT_BASE_URL`, and return `ProfileConfig`. |
+
+The token normally comes from `CLAWCHAT_TOKEN` in `.env` after activation. Reading `platforms.clawchat.extra.token` remains as a backward-compatible fallback for older installs.
 
 `ProfileConfigError` is raised only by the loader helpers. The CLI handlers catch no exceptions from tools directly because the six tool handlers return error dictionaries instead of raising.
 

@@ -36,6 +36,45 @@ def _write_config(config_path: Path, config: dict[str, Any]) -> None:
     )
 
 
+def _env_path() -> Path:
+    return _hermes_home() / ".env"
+
+
+def _validate_env_value(key: str, value: str) -> str:
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{key} cannot contain newlines")
+    return value
+
+
+def _write_env_values(values: dict[str, str | None]) -> Path:
+    path = _env_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    pending = {
+        key: None if value is None else _validate_env_value(key, str(value))
+        for key, value in values.items()
+    }
+    emitted: set[str] = set()
+    next_lines: list[str] = []
+
+    for line in lines:
+        key = line.split("=", 1)[0] if "=" in line else ""
+        if key not in pending:
+            next_lines.append(line)
+            continue
+        value = pending[key]
+        if value is not None and key not in emitted:
+            next_lines.append(f"{key}={value}")
+            emitted.add(key)
+
+    for key, value in pending.items():
+        if value is not None and key not in emitted:
+            next_lines.append(f"{key}={value}")
+
+    path.write_text("\n".join(next_lines) + ("\n" if next_lines else ""), encoding="utf-8")
+    return path
+
+
 def _derive_websocket_url(base_url: str) -> str:
     parsed = urlparse(base_url)
     if parsed.netloc in {"company.newbaselab.com:19001", "company.newbaselab.com:10086"}:
@@ -58,13 +97,12 @@ def persist_activation(
     extra = clawchat.setdefault("extra", {})
     extra["base_url"] = base_url.rstrip("/")
     extra["websocket_url"] = _derive_websocket_url(extra["base_url"])
-    extra["token"] = access_token
+    extra.pop("token", None)
+    extra.pop("refresh_token", None)
     extra["user_id"] = user_id
     extra["reply_mode"] = "stream"
     extra["show_tools_output"] = False
     extra["show_think_output"] = False
-    if refresh_token:
-        extra["refresh_token"] = refresh_token
 
     streaming = config.setdefault("streaming", {})
     streaming["enabled"] = True
@@ -78,9 +116,16 @@ def persist_activation(
     clawchat_display["tool_progress"] = "off"
     clawchat_display["show_reasoning"] = False
 
+    env_path = _write_env_values(
+        {
+            "CLAWCHAT_TOKEN": access_token,
+            "CLAWCHAT_REFRESH_TOKEN": refresh_token or None,
+        }
+    )
     _write_config(config_path, config)
     return {
         "config_path": str(config_path),
+        "env_path": str(env_path),
         "user_id": user_id,
         "base_url": extra["base_url"],
         "websocket_url": extra["websocket_url"],

@@ -26,7 +26,7 @@ python -m clawchat_gateway.install --hermes-dir "$HERMES_DIR" --check    # statu
 python -m clawchat_gateway.install --hermes-dir "$HERMES_DIR" --dry-run
 python -m clawchat_gateway.install --hermes-dir "$HERMES_DIR" --uninstall
 
-# Activate a ClawChat account against the API (writes ~/.hermes/config.yaml)
+# Activate a ClawChat account against the API (writes secrets to ~/.hermes/.env and config to ~/.hermes/config.yaml)
 python -m clawchat_gateway.activate CODE
 python -m clawchat_gateway.activate CODE --base-url http://host:port
 
@@ -60,7 +60,7 @@ Because hermes-agent has no plugin API for adding a platform, the installer inse
 - `tools/send_message_tool.py` — map the `"clawchat"` string to `Platform.CLAWCHAT`
 - `hermes_cli/platforms.py` — CLI platform registry entry
 
-`configure_clawchat_allow_all()` and `configure_clawchat_streaming()` also write `~/.hermes/.env` (`CLAWCHAT_ALLOW_ALL_USERS=true`) and fill in streaming defaults in `~/.hermes/config.yaml`. Installed state is tracked in `<hermes-dir>/.clawchat_gateway_install_state.json`.
+`configure_clawchat_allow_all()` and `configure_clawchat_streaming()` also write `~/.hermes/.env` (`CLAWCHAT_ALLOW_ALL_USERS=true`) and fill in streaming defaults in `~/.hermes/config.yaml`. Activation writes `CLAWCHAT_TOKEN` / `CLAWCHAT_REFRESH_TOKEN` to `.env` and keeps non-secret platform settings in `config.yaml`. Installed state is tracked in `<hermes-dir>/.clawchat_gateway_install_state.json`.
 
 When editing `build_patches()`, if you change an `anchor` string, pick something still present in the current hermes-agent source; if you change a `payload`, also bump or re-scope the `id` so existing installs don't skip your new payload (old marker is still there).
 
@@ -74,7 +74,7 @@ When editing `build_patches()`, if you change an `anchor` string, pick something
 - **`media_runtime.py`** — outbound uploads via `/media/upload`, inbound downloads into `media_download_dir` (default `/tmp/clawchat-media`). Local outbound paths must be under `media_local_roots` (`ensure_allowed_local_path`).
 - **`api_client.py`** — thin HTTP client using `urllib.request` in a thread (no `requests`/`httpx` dep). Default base URL is `http://company.newbaselab.com:10086`; responses must have envelope `{code: 0, data: {...}}` or `ClawChatApiError` is raised. Handles `/v1/agents/connect`, `/v1/users/me`, `/v1/users/{id}`, `/v1/friends`, `/media/upload`, `/v1/files/upload-url`.
 - **`config.py`** — `ClawChatConfig` is a frozen dataclass built from `platform_config.extra`. Supports both snake_case and camelCase keys (`_get_alias`). Do **not** add required fields without also updating `from_platform_config` and the activation writer.
-- **`activate.py`** — calls `/v1/agents/connect` with `platform=hermes`, `type=clawbot`, writes token/user_id/base_url/websocket_url into `~/.hermes/config.yaml` under `platforms.clawchat.extra`, and configures streaming defaults. The websocket URL is derived from the base URL unless the base is the known NewBase host (which uses `DEFAULT_WEBSOCKET_URL` verbatim).
+- **`activate.py`** — calls `/v1/agents/connect` with `platform=hermes`, `type=clawbot`, writes `CLAWCHAT_TOKEN` / `CLAWCHAT_REFRESH_TOKEN` into `~/.hermes/.env`, writes user_id/base_url/websocket_url into `~/.hermes/config.yaml` under `platforms.clawchat.extra`, and configures streaming defaults. The websocket URL is derived from the base URL unless the base is the known NewBase host (which uses `DEFAULT_WEBSOCKET_URL` verbatim).
 - **`tools.py`** — async tool handlers for the six new `clawchat_*` tools. Single source of truth shared by the Hermes tool registration in `__init__.py` and the CLI in `profile.py`. Returns result dicts; never raises.
 - **`profile.py`** — CLI subcommands (`get`, `get-user`, `friends`, `update`, `upload-avatar`, `upload-media`) that mirror the `clawchat_*` tool surface. Each subcommand calls the same handler in `tools.py` that the tool registration calls.
 - **`device_id.py`** — stable device ID for the `X-Device-Id` header.
@@ -94,5 +94,5 @@ Copied into `$HERMES_HOME/skills/clawchat/` by `install_skill()`. It encodes the
 Runtime (read by the installed hermes-agent patches and by Python modules here):
 - `HERMES_HOME` — Hermes data dir (default `~/.hermes`). Controls where `config.yaml`, `.env`, `skills/`, and `plugins/` live.
 - `HERMES_DIR` / `HERMES_AGENT_DIR` — hermes-agent install dir (default `$HERMES_HOME/hermes-agent`, or `/opt/hermes` if present).
-- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — override values in `platforms.clawchat.extra` at hermes-agent startup (injected by the `env_overrides` patch).
+- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_REFRESH_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — override values in `platforms.clawchat.extra` at hermes-agent startup (injected by the `env_overrides` patches).
 - `CLAWCHAT_ALLOWED_USERS`, `CLAWCHAT_ALLOW_ALL_USERS` — auth allowlist, read by hermes-agent.

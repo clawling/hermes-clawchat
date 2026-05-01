@@ -49,7 +49,7 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 - **Two supported WebSocket paths.** If the WebSocket URL path is `/v1/ws`, the legacy hello/challenge handshake is skipped (realtime subprotocol). Otherwise the adapter does a `connect` frame with HMAC `sign` over `client_id|nonce` and waits for `hello-ok`.
 - **Streaming with deltas.** `stream_buffer.compute_delta(prev, curr)` produces the appended chunk so `message.add` carries only the delta. If the new text isn't a prefix-extension of the previous, the full text is resent.
 - **Filter-before-send.** Adapter strips `<think>...</think>` blocks and tool-invocation fence/tag blocks out of visible output unless `show_think_output` / `show_tools_output` are explicitly enabled.
-- **Activation self-restart.** After `clawchat_activate` writes credentials to `~/.hermes/config.yaml`, the handler schedules a detached `sh -lc 'sleep 2; hermes gateway restart'` so the tool response can return before the gateway reloads.
+- **Activation self-restart.** After `clawchat_activate` writes `CLAWCHAT_TOKEN` / `CLAWCHAT_REFRESH_TOKEN` to `~/.hermes/.env` and non-secret platform settings to `~/.hermes/config.yaml`, the handler schedules a detached `sh -lc 'sleep 2; hermes gateway restart'` so the tool response can return before the gateway reloads.
 
 ## Environment variables
 
@@ -57,6 +57,6 @@ Runtime (read by installed hermes-agent patches and by Python modules here):
 
 - `HERMES_HOME` — Hermes data dir (default `~/.hermes`). Controls `config.yaml`, `.env`, `skills/`, `plugins/` locations.
 - `HERMES_DIR` / `HERMES_AGENT_DIR` — hermes-agent install dir (default `$HERMES_HOME/hermes-agent`, or `/opt/hermes` if present).
-- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — inject values into `platforms.clawchat.extra` at hermes-agent startup (via the `env_overrides` patch in `install.py`).
+- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_REFRESH_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — inject values into `platforms.clawchat.extra` at hermes-agent startup (via the `env_overrides` patches in `install.py`).
 - `CLAWCHAT_ALLOWED_USERS`, `CLAWCHAT_ALLOW_ALL_USERS` — auth allowlist (read by hermes-agent; `install.py` sets the latter to `true` by default).
 - `CLAWCHAT_DEVICE_ID` — override the auto-derived device id.

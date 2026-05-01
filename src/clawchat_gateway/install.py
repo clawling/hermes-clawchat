@@ -157,6 +157,17 @@ def build_patches(hermes_dir: Path) -> List[Patch]:
             indent_to_anchor=True,
         ),
         Patch(
+            id="env_overrides_refresh_token",
+            file=cfg,
+            anchor='if clawchat_token: _ce["token"] = clawchat_token',
+            payload=(
+                'clawchat_refresh_token = os.getenv("CLAWCHAT_REFRESH_TOKEN", "").strip()\n'
+                'if clawchat_refresh_token: _ce["refresh_token"] = clawchat_refresh_token\n'
+            ),
+            insert_after=True,
+            indent_to_anchor=True,
+        ),
+        Patch(
             id="connected_platforms",
             file=cfg,
             anchor='elif platform == Platform.QQBOT and config.extra.get("app_id") and config.extra.get("client_secret"):',

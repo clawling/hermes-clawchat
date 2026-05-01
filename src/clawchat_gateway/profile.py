@@ -30,6 +30,35 @@ def _hermes_home() -> Path:
     return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
 
 
+def _load_env(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].lstrip()
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        values[key] = value
+    return values
+
+
+def _first_non_empty(*values: Any) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise ProfileConfigError(f"config.yaml not found at {path}; activate ClawChat first")
@@ -43,8 +72,10 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_profile_config() -> ProfileConfig:
-    config_path = _hermes_home() / "config.yaml"
+    hermes_home = _hermes_home()
+    config_path = hermes_home / "config.yaml"
     config = _load_yaml(config_path)
+    env = _load_env(hermes_home / ".env")
     extra = (
         config.get("platforms", {})
         .get("clawchat", {})
@@ -53,13 +84,26 @@ def load_profile_config() -> ProfileConfig:
     if not isinstance(extra, dict):
         extra = {}
 
-    base_url = str(extra.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
-    token = str(extra.get("token") or "").strip()
-    user_id = str(extra.get("user_id") or "").strip()
+    base_url = _first_non_empty(
+        os.environ.get("CLAWCHAT_BASE_URL"),
+        env.get("CLAWCHAT_BASE_URL"),
+        extra.get("base_url"),
+        DEFAULT_BASE_URL,
+    ).rstrip("/")
+    token = _first_non_empty(
+        os.environ.get("CLAWCHAT_TOKEN"),
+        env.get("CLAWCHAT_TOKEN"),
+        extra.get("token"),
+    )
+    user_id = _first_non_empty(
+        os.environ.get("CLAWCHAT_USER_ID"),
+        env.get("CLAWCHAT_USER_ID"),
+        extra.get("user_id"),
+    )
     if not token:
-        raise ProfileConfigError("missing platforms.clawchat.extra.token; activate ClawChat first")
+        raise ProfileConfigError("missing CLAWCHAT_TOKEN / platforms.clawchat.extra.token; activate ClawChat first")
     if not user_id:
-        raise ProfileConfigError("missing platforms.clawchat.extra.user_id; activate ClawChat first")
+        raise ProfileConfigError("missing CLAWCHAT_USER_ID / platforms.clawchat.extra.user_id; activate ClawChat first")
     return ProfileConfig(base_url=base_url, token=token, user_id=user_id, config_path=config_path)
 
 

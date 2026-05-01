@@ -38,7 +38,8 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 ### `tests/test_activate.py`
 
-- `test_persist_activation_writes_clawchat_config` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `config.yaml` has `platforms.clawchat.enabled`, the expected `extra` keys, and streaming/display defaults.
+- `test_persist_activation_writes_secrets_to_env_and_config_without_secrets` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `.env` has the ClawChat tokens while `config.yaml` has enabled ClawChat, non-secret `extra` keys, and streaming/display defaults.
+- `test_persist_activation_removes_stale_config_secrets_and_refresh_env` — ensures a reactivation removes old YAML token fields, updates `CLAWCHAT_TOKEN`, removes stale `CLAWCHAT_REFRESH_TOKEN` when no refresh token is returned, and preserves unrelated `.env` entries.
 
 ### `tests/test_adapter.py` (~26 tests)
 
@@ -140,7 +141,7 @@ Handler-level coverage for the six new account/media tools:
 
 CLI and loader coverage:
 
-- `load_profile_config` raises when `token` or `user_id` is missing.
+- `load_profile_config` reads token from process env / `.env` / legacy YAML fallback and raises when token or `user_id` is missing.
 - `profile get` calls `tools.get_account_profile` and prints JSON to stdout.
 - `profile update` with no fields prints a validation error to stderr.
 - `profile upload-avatar` rejects relative local paths.

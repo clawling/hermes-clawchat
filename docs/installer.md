@@ -56,6 +56,7 @@ Returns the full list of patches, targeting files under `hermes_dir`:
 |---|---|---|---|
 | `platform_enum` | `gateway/config.py` | `QQBOT = "qqbot"` | `CLAWCHAT = "clawchat"` |
 | `env_overrides` | `gateway/config.py` | `# Session settings` | `CLAWCHAT_*` env vars → `platforms.clawchat.extra` |
+| `env_overrides_refresh_token` | `gateway/config.py` | `if clawchat_token: _ce["token"] = clawchat_token` | `CLAWCHAT_REFRESH_TOKEN` env var → `platforms.clawchat.extra.refresh_token` |
 | `connected_platforms` | `gateway/config.py` | `elif platform == Platform.QQBOT and config.extra.get("app_id") ...` | Gate on `websocket_url` + `token` |
 | `adapter_factory` | `gateway/run.py` | `elif platform == Platform.QQBOT:` | Import + return `ClawChatAdapter(config)` |
 | `auth_maps_allowed` | `gateway/run.py` | `Platform.QQBOT: "QQ_ALLOWED_USERS",` | `Platform.CLAWCHAT: "CLAWCHAT_ALLOWED_USERS",` |

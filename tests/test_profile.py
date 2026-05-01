@@ -20,6 +20,35 @@ def _write_config(home, *, token="tk", user_id="u1", base_url="http://127.0.0.1:
     )
 
 
+def _write_env(home, **values):
+    (home / ".env").write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+    )
+
+
+def test_load_profile_config_reads_token_from_env_file(monkeypatch, tmp_path):
+    _write_config(tmp_path, token="")
+    _write_env(tmp_path, CLAWCHAT_TOKEN="env-token")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    config = load_profile_config()
+
+    assert config.token == "env-token"
+    assert config.user_id == "u1"
+
+
+def test_load_profile_config_prefers_process_env_over_env_file(monkeypatch, tmp_path):
+    _write_config(tmp_path, token="")
+    _write_env(tmp_path, CLAWCHAT_TOKEN="file-token")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("CLAWCHAT_TOKEN", "process-token")
+
+    config = load_profile_config()
+
+    assert config.token == "process-token"
+
+
 def test_load_profile_config_requires_token(monkeypatch, tmp_path):
     _write_config(tmp_path, token="")
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))

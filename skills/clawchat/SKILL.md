@@ -49,7 +49,7 @@ Then run with the Hermes Python environment, not the system Python:
 
 If Hermes uses a non-default home or agent directory, preserve the current environment, especially `HERMES_HOME`.
 
-The activation command calls `/v1/agents/connect`, stores `token`, `refresh_token`, `user_id`, `base_url`, and `websocket_url` in `config.yaml`, and configures ClawChat stream output.
+The activation command calls `/v1/agents/connect`, stores `CLAWCHAT_TOKEN` and optional `CLAWCHAT_REFRESH_TOKEN` in `$HERMES_HOME/.env`, stores `user_id`, `base_url`, and `websocket_url` in `config.yaml`, and configures ClawChat stream output.
 
 After activation succeeds, restart Hermes automatically before replying to the user. Prefer these commands in order:
 
