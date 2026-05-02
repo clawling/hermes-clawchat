@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import site
 import sys
+from copy import copy
 from pathlib import Path
+from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,164 @@ def _tool_error(exc: Exception) -> dict:
     return {"ok": False, "error": str(exc), "kind": exc.__class__.__name__}
 
 
+def _tool_result(payload: dict) -> str:
+    """Return a Hermes v0.12-compatible tool result string."""
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _hermes_home() -> Path:
+    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+
+
+def _clawchat_home_extra() -> dict:
+    config_path = _hermes_home() / "config.yaml"
+    try:
+        import yaml
+
+        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        logger.debug(
+            "ClawChat could not read Hermes config.yaml for registry check: %s",
+            exc,
+        )
+        return {}
+
+    platform_block = (data.get("platforms") or {}).get("clawchat") or {}
+    if not isinstance(platform_block, dict):
+        return {}
+    extra = platform_block.get("extra") or {}
+    return extra if isinstance(extra, dict) else {}
+
+
+def _clawchat_platform_config_with_home_extra(config):
+    """Merge config.yaml ClawChat extra into sparse plugin PlatformConfig values.
+
+    Hermes v0.12 can load gateway config before user plugin platform names are
+    registered. In that path the dynamic platform may be enabled but its
+    ``extra`` block is empty. Once the plugin is registered, use the canonical
+    config.yaml data as a fallback while letting explicit runtime config win.
+    """
+    home_extra = _clawchat_home_extra()
+    current_extra = getattr(config, "extra", None) or {}
+    if not home_extra:
+        return config
+    if not isinstance(current_extra, dict):
+        current_extra = {}
+
+    merged_extra = dict(home_extra)
+    for key, value in current_extra.items():
+        if value is None or value == "":
+            continue
+        merged_extra[key] = value
+
+    if merged_extra == current_extra:
+        return config
+
+    try:
+        merged_config = copy(config)
+        merged_config.extra = merged_extra
+        return merged_config
+    except Exception:
+        return SimpleNamespace(extra=merged_extra)
+
+
+def _clawchat_dependencies_available() -> bool:
+    try:
+        import websockets  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _clawchat_connection_configured(config=None) -> bool:
+    from clawchat_gateway.config import ClawChatConfig
+
+    platform_config = (
+        _clawchat_platform_config_with_home_extra(config)
+        if config is not None
+        else SimpleNamespace(extra=_clawchat_home_extra())
+    )
+    clawchat_config = ClawChatConfig.from_platform_config(platform_config)
+    return bool(clawchat_config.websocket_url and clawchat_config.token)
+
+
+def _check_clawchat_platform_requirements() -> bool:
+    return _clawchat_dependencies_available()
+
+
+def _validate_clawchat_platform_config(config) -> bool:
+    if not _clawchat_dependencies_available():
+        return False
+
+    from clawchat_gateway.config import ClawChatConfig
+
+    merged_config = _clawchat_platform_config_with_home_extra(config)
+    clawchat_config = ClawChatConfig.from_platform_config(merged_config)
+    configured = bool(clawchat_config.websocket_url and clawchat_config.token)
+    if not configured:
+        logger.warning(
+            "ClawChat platform config incomplete: websocket_url=%s token=%s hermes_home=%s",
+            bool(clawchat_config.websocket_url),
+            bool(clawchat_config.token),
+            _hermes_home(),
+        )
+    return configured
+
+
+def _create_clawchat_adapter(config):
+    from clawchat_gateway.adapter import ClawChatAdapter
+
+    return ClawChatAdapter(_clawchat_platform_config_with_home_extra(config))
+
+
+def _register_platform(ctx) -> bool:
+    register_platform = getattr(ctx, "register_platform", None)
+    if not callable(register_platform):
+        return False
+
+    register_platform(
+        name="clawchat",
+        label="ClawChat",
+        adapter_factory=_create_clawchat_adapter,
+        check_fn=_check_clawchat_platform_requirements,
+        validate_config=_validate_clawchat_platform_config,
+        is_connected=_validate_clawchat_platform_config,
+        required_env=["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"],
+        install_hint=(
+            "Activate ClawChat with python -m clawchat_gateway.activate CODE, "
+            "or set CLAWCHAT_TOKEN and CLAWCHAT_REFRESH_TOKEN, then configure "
+            "websocket_url in config.yaml."
+        ),
+        allowed_users_env="CLAWCHAT_ALLOWED_USERS",
+        allow_all_env="CLAWCHAT_ALLOW_ALL_USERS",
+        max_message_length=0,
+        emoji="💬",
+        platform_hint=(
+            "You are on ClawChat, a chat platform with structured text and media fragments. "
+            "Keep replies compact and chat-native. You can send media files natively: "
+            "include MEDIA:/absolute/path/to/file in your response. Images, audio, video, "
+            "and files are emitted as native ClawChat fragments."
+        ),
+    )
+    logger.info("ClawChat registered Hermes platform via plugin registry")
+    return True
+
+
+def _configure_runtime_defaults() -> None:
+    try:
+        from clawchat_gateway.install import (
+            configure_clawchat_allow_all,
+            configure_clawchat_streaming,
+        )
+
+        configure_clawchat_allow_all()
+        configure_clawchat_streaming()
+    except Exception as exc:
+        logger.warning("ClawChat could not configure runtime defaults: %s", exc)
+
+
 async def _handle_clawchat_activate(args, **kw):
     task_id = kw.get("task_id") or "default"
     _handle_clawchat_activate._last_task_id = task_id
@@ -126,10 +287,10 @@ async def _handle_clawchat_activate(args, **kw):
         result["restart_message"] = "ClawChat activation is saved. Hermes restart has been scheduled in the background."
         logger.info("clawchat_activate done task_id=%s user_id=%s", task_id, result.get("user_id"))
         logger.info("clawchat_activate scheduled restart task_id=%s command=%s", task_id, restart_command)
-        return result
+        return _tool_result(result)
     except Exception as exc:
         logger.warning("clawchat_activate failed task_id=%s error=%s", task_id, exc)
-        return _tool_error(exc)
+        return _tool_result(_tool_error(exc))
 
 
 async def _handle_clawchat_get_account_profile(args, **kw):
@@ -139,7 +300,7 @@ async def _handle_clawchat_get_account_profile(args, **kw):
 
     result = await tools.get_account_profile()
     logger.info("clawchat_get_account_profile done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
 
 
 async def _handle_clawchat_get_user_profile(args, **kw):
@@ -149,7 +310,7 @@ async def _handle_clawchat_get_user_profile(args, **kw):
 
     result = await tools.get_user_profile(str(args.get("userId") or ""))
     logger.info("clawchat_get_user_profile done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
 
 
 def _optional_int_arg(value):
@@ -173,7 +334,7 @@ async def _handle_clawchat_list_account_friends(args, **kw):
         page_size=_optional_int_arg(args.get("pageSize")),
     )
     logger.info("clawchat_list_account_friends done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
 
 
 async def _handle_clawchat_update_account_profile(args, **kw):
@@ -187,7 +348,7 @@ async def _handle_clawchat_update_account_profile(args, **kw):
         bio=args.get("bio") if isinstance(args.get("bio"), str) else None,
     )
     logger.info("clawchat_update_account_profile done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
 
 
 async def _handle_clawchat_upload_avatar_image(args, **kw):
@@ -197,7 +358,7 @@ async def _handle_clawchat_upload_avatar_image(args, **kw):
 
     result = await tools.upload_avatar_image(str(args.get("filePath") or ""))
     logger.info("clawchat_upload_avatar_image done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
 
 
 async def _handle_clawchat_upload_media_file(args, **kw):
@@ -207,13 +368,23 @@ async def _handle_clawchat_upload_media_file(args, **kw):
 
     result = await tools.upload_media_file(str(args.get("filePath") or ""))
     logger.info("clawchat_upload_media_file done task_id=%s", task_id)
-    return result
+    return _tool_result(result)
+
+
+_DIRECT_TOOL_USE_INSTRUCTION = (
+    " Use this registered ClawChat plugin tool directly. Do not use execute, Python, curl, "
+    "shell commands, or handwritten scripts for this ClawChat API action."
+)
+
+
+def _direct_tool_description(description: str) -> str:
+    return description + _DIRECT_TOOL_USE_INSTRUCTION
 
 
 def _register_tools(ctx) -> None:
     activate_schema = {
         "name": "clawchat_activate",
-        "description": (
+        "description": _direct_tool_description(
             "Exchange a ClawChat activation code for token, refresh_token, and user_id, then persist "
             "them into Hermes config. Always use this when the user says a ClawChat activation code, "
             "for example `clawchat 的激活码是 R4E1IW`, `ClawChat激活码: R4E1IW`, or "
@@ -250,7 +421,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_get_account_profile",
-            "description": (
+            "description": _direct_tool_description(
                 "Fetch the configured ClawChat account profile (user id, nickname/display name, avatar, bio). "
                 "TRIGGER — invoke when the user asks for the ClawChat account/profile connected to this plugin, "
                 "such as 'show my ClawChat profile', 'what is the configured ClawChat account?', "
@@ -270,7 +441,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_get_user_profile",
-            "description": (
+            "description": _direct_tool_description(
                 "Fetch a ClawChat user's public profile by userId. "
                 "TRIGGER — invoke when the user asks to look up, view, or inspect a specific ClawChat user's public profile "
                 "and provides a concrete userId. Do not guess or infer userId from a nickname/display name."
@@ -297,7 +468,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_list_account_friends",
-            "description": (
+            "description": _direct_tool_description(
                 "List the configured ClawChat account's friends/contacts, paginated (page=1, pageSize=20 by default). "
                 "TRIGGER — invoke when the user asks for this ClawChat account's friends, contacts, friend list, "
                 "or asks to show more friends with pagination."
@@ -321,7 +492,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_update_account_profile",
-            "description": (
+            "description": _direct_tool_description(
                 "Update the configured ClawChat account profile (nickname and/or avatar_url and/or bio). "
                 "TRIGGER — invoke this tool whenever the user's message explicitly asks to change the ClawChat account profile: "
                 "(1) ClawChat account nickname/name change: 'change the ClawChat account nickname to X', "
@@ -357,7 +528,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_upload_avatar_image",
-            "description": (
+            "description": _direct_tool_description(
                 "Upload a local image file to ClawChat avatar storage (max 20MB) and return the hosted avatar URL. "
                 "TRIGGER — invoke when the user provides an absolute local image path and asks to upload it for the ClawChat account avatar/profile picture. "
                 "This tool does not update or set the account avatar by itself; call `clawchat_update_account_profile` with `avatar_url` after this tool returns a URL."
@@ -381,7 +552,7 @@ def _register_tools(ctx) -> None:
         "clawchat",
         {
             "name": "clawchat_upload_media_file",
-            "description": (
+            "description": _direct_tool_description(
                 "Upload a local file or media file to ClawChat media storage (max 20MB) and return the public URL/shareable URL. "
                 "TRIGGER — invoke when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file. "
                 "Do not use this for account avatar changes; use `clawchat_upload_avatar_image` for avatar images."
@@ -404,16 +575,19 @@ def _register_tools(ctx) -> None:
 def register(ctx) -> None:
     _register_python_path(_plugin_dir() / "src")
 
-    try:
-        _install_gateway()
-    except Exception as exc:
-        logger.error(
-            "ClawChat gateway auto-install failed; skipping tool/skill "
-            "registration to avoid leaving hermes-agent in a partially "
-            "patched state: %s",
-            exc,
-        )
-        raise
+    if _register_platform(ctx):
+        _configure_runtime_defaults()
+    else:
+        try:
+            _install_gateway()
+        except Exception as exc:
+            logger.error(
+                "ClawChat gateway auto-install failed; skipping tool/skill "
+                "registration to avoid leaving hermes-agent in a partially "
+                "patched state: %s",
+                exc,
+            )
+            raise
 
     _register_tools(ctx)
 

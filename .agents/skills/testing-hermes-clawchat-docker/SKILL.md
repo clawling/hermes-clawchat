@@ -26,7 +26,7 @@ Use this skill to run Hermes ClawChat E2E tests against Docker images. Core prin
 2. If Android adb might be involved, ask: `这次是否需要 Android adb 真实聊天测试？` Wait for the answer.
 3. For each image in `.e2e/images.tsv`, create a fresh isolated home from `.e2e/hermes-home-backup/` under `.e2e/runs/<tag>/<test-name>/home/`.
 4. Start the image with that home mounted as `HERMES_HOME=/opt/data` and the plugin repo mounted into the container.
-5. Install the current repo plugin and run the ClawChat installer against the container Hermes directory.
+5. Install and enable the current repo as a Hermes v0.12+ plugin platform. Do not run the ClawChat source patch installer unless explicitly testing legacy Hermes without `ctx.register_platform(...)`.
 6. Run only the selected behavior. Stop after its assertions pass or fail.
 7. Save logs per image and report pass/fail per image.
 
@@ -40,7 +40,7 @@ Input exactly one natural-language activation message:
 clawchat 的激活码是 <code>
 ```
 
-Success requires `config.yaml` in that image's run home to contain `platforms.clawchat.extra.token`, `user_id`, `base_url`, and `websocket_url`. Do not continue to profile queries, nickname updates, friends list, or uploads in the same test.
+Success requires `config.yaml` in that image's run home to contain `platforms.clawchat.enabled=true` plus `platforms.clawchat.extra.user_id`, `base_url`, and `websocket_url`; `$HERMES_HOME/.env` must contain `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN`. Do not continue to profile queries, nickname updates, friends list, or uploads in the same test.
 
 ## Android adb Test
 

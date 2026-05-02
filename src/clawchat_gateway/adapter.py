@@ -68,12 +68,21 @@ _ACTIVATION_INTENT_RE = re.compile(
     r"(clawchat|claw\s*chat|激活码|激活|activate|activation|invite\s*code)",
     re.IGNORECASE,
 )
+_HERMES_STREAM_CURSOR_RE = re.compile(r"[ \t]*▉\Z")
 _CLAWCHAT_SKILL_PROMPT = (
     "The user may be activating or configuring ClawChat. Use the installed "
     "clawchat skill instructions. If an activation code is present, run "
-    "`python -m clawchat_gateway.activate CODE`, then tell the user to restart "
-    "Hermes gateway. If no code is present, ask for the ClawChat activation code."
+    "`python -m clawchat_gateway.activate CODE`; it writes the ClawChat token "
+    "and refresh token and schedules a Hermes gateway restart. If no code is "
+    "present, ask for the ClawChat activation code."
 )
+
+
+def _clawchat_platform():
+    platform = getattr(Platform, "CLAWCHAT", None)
+    if platform is not None:
+        return platform
+    return Platform("clawchat")
 
 
 @dataclass
@@ -93,8 +102,8 @@ def check_clawchat_requirements(platform_config: Any) -> bool:
     except ImportError:
         logger.warning("ClawChat: websockets library not installed")
         return False
-    extra = getattr(platform_config, "extra", None) or {}
-    if not extra.get("websocket_url") or not extra.get("token"):
+    cfg = ClawChatConfig.from_platform_config(platform_config)
+    if not cfg.websocket_url or not cfg.token:
         logger.warning(
             "ClawChat: websocket_url and token are required in platforms.clawchat.extra"
         )
@@ -104,10 +113,11 @@ def check_clawchat_requirements(platform_config: Any) -> bool:
 
 class ClawChatAdapter(BasePlatformAdapter):
     SUPPORTS_MESSAGE_EDITING = True
+    REQUIRES_EDIT_FINALIZE = True
     MAX_MESSAGE_LENGTH = 0
 
     def __init__(self, platform_config: Any) -> None:
-        super().__init__(platform_config, Platform.CLAWCHAT)
+        super().__init__(platform_config, _clawchat_platform())
         self._clawchat_config = ClawChatConfig.from_platform_config(platform_config)
         self._connection: Any = ClawChatConnection(
             self._clawchat_config,
@@ -583,7 +593,7 @@ class ClawChatAdapter(BasePlatformAdapter):
             filtered = _TOOL_FENCE_OPEN_RE.sub("", filtered)
             filtered = _TOOL_TAG_BLOCK_RE.sub("", filtered)
             filtered = _TOOL_TAG_OPEN_RE.sub("", filtered)
-        return filtered
+        return _HERMES_STREAM_CURSOR_RE.sub("", filtered)
 
     def _should_suppress_tool_progress(self, content: str) -> bool:
         if self._clawchat_config.show_tools_output:

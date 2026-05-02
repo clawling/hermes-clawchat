@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import clawchat_gateway.adapter as adapter_module
 from clawchat_gateway.adapter import ClawChatAdapter
 from clawchat_gateway.inbound import InboundMessage
 from clawchat_gateway.stream_buffer import compute_delta
@@ -37,6 +38,20 @@ def _make_adapter(**extra) -> ClawChatAdapter:
     )
     adapter._connection = FakeConnection()
     return adapter
+
+
+def test_adapter_accepts_dynamic_clawchat_platform(monkeypatch):
+    class DynamicPlatform:
+        def __init__(self, value):
+            if value != "clawchat":
+                raise ValueError(value)
+            self.value = value
+
+    monkeypatch.setattr(adapter_module, "Platform", DynamicPlatform)
+
+    adapter = ClawChatAdapter(SimpleNamespace(extra={"websocket_url": "ws://x", "token": "t"}))
+
+    assert adapter.platform.value == "clawchat"
 
 
 def test_compute_delta_uses_suffix_when_content_extends():
@@ -452,6 +467,50 @@ async def test_edit_message_with_finalize_emits_done_and_reply():
         {"kind": "text", "text": "hello world"}
     ]
     assert first.message_id not in adapter._active_runs_by_id
+
+
+async def test_v012_stream_edits_strip_cursor_and_finalize_lifecycle():
+    adapter = _make_adapter(reply_mode="stream")
+
+    result = await adapter.send(chat_id="u1", content="Hey! I'm ▉")
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=result.message_id or "",
+        content="Hey! I'm doing well ▉",
+    )
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=result.message_id or "",
+        content="Hey! I'm doing well",
+        finalize=True,
+    )
+
+    assert adapter.REQUIRES_EDIT_FINALIZE is True
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == [
+        "message.created",
+        "message.add",
+        "message.add",
+        "message.done",
+        "message.reply",
+    ]
+    first_add = adapter._connection.sent_frames[1]["payload"]["fragments"][0]
+    second_add = adapter._connection.sent_frames[2]["payload"]["fragments"][0]
+    done = adapter._connection.sent_frames[3]
+    reply = adapter._connection.sent_frames[4]
+    assert first_add == {"kind": "text", "text": "Hey! I'm", "delta": "Hey! I'm"}
+    assert second_add == {
+        "kind": "text",
+        "text": "Hey! I'm doing well",
+        "delta": " doing well",
+    }
+    assert done["payload"]["fragments"] == [{"kind": "text", "text": "Hey! I'm doing well"}]
+    assert reply["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "Hey! I'm doing well"}
+    ]
+    assert all(
+        "▉" not in str(frame)
+        for frame in adapter._connection.sent_frames
+    )
 
 
 async def test_edit_message_ignores_unknown_kwargs():

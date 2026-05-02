@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 from pathlib import Path
 
 
@@ -74,4 +75,6 @@ def test_git_plugin_handlers_accept_task_id(monkeypatch):
         )
     )
 
-    assert result == {"updated": {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"}}
+    assert json.loads(result) == {
+        "updated": {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"}
+    }

@@ -1,24 +1,26 @@
 # Hermes ClawChat
 
-Install the ClawChat gateway integration into a Hermes Agent instance:
+Install the ClawChat gateway integration into a Hermes Agent v0.12.0+ instance:
 
 ```bash
-npx -y @newbase-clawchat/hermes-clawchat@latest install
+hermes plugins install newbase-clawchat/hermes-clawchat
+hermes plugins enable clawchat
 ```
 
-For Docker/container deployments, set the Hermes paths explicitly:
+For Docker/container deployments, set the Hermes home explicitly:
 
 ```bash
-HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes npx -y @newbase-clawchat/hermes-clawchat@latest install
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install newbase-clawchat/hermes-clawchat --force'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
 ```
 
 Defaults:
 
 - `HERMES_HOME`: `~/.hermes`
 - `HERMES_DIR`: `~/.hermes/hermes-agent`
-- install source: `$HERMES_HOME/plugins/clawchat-gateway-src`
+- plugin source: `$HERMES_HOME/plugins/clawchat`
 
-Restart Hermes after installation so the gateway and ClawChat skill are loaded.
+The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx.register_platform(...)`; no Hermes source patch or Node install shim is needed on v0.12.0+.
 
 ## Tools
 
@@ -49,18 +51,24 @@ python -m clawchat_gateway.profile get-user <USER_ID>
 
 ## Install With Hermes Plugins
 
-Hermes plugins are installed from Git repositories:
+Hermes v0.12.0+ loads messaging adapters as pluggable gateway platforms. ClawChat is installed and enabled like any other Hermes plugin; it registers the `clawchat` platform through `ctx.register_platform(...)`, so no Hermes source patch is needed.
 
 ```bash
 hermes plugins install newbase-clawchat/hermes-clawchat
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}" HERMES_DIR="${HERMES_DIR:-$HOME/.hermes/hermes-agent}" node "$HERMES_HOME/plugins/clawchat/bin/hermes-clawchat.js" install
-hermes gateway restart
+hermes plugins enable clawchat
+
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+PLUGIN_DIR="$HERMES_HOME/plugins/clawchat"
+PYTHONPATH="$PLUGIN_DIR/src:$PLUGIN_DIR:${PYTHONPATH:-}" \
+python -m clawchat_gateway.activate <CODE>
 ```
+
+Activation writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env`, stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`, and schedules `hermes gateway restart` so the gateway reloads the enabled platform and credentials.
 
 For Docker:
 
 ```bash
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install newbase-clawchat/hermes-clawchat --force'
-docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes node /opt/data/plugins/clawchat/bin/hermes-clawchat.js install'
-docker restart hermes
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes PYTHONPATH=/opt/data/plugins/clawchat/src:/opt/data/plugins/clawchat /opt/hermes/.venv/bin/python -m clawchat_gateway.activate <CODE>'
 ```

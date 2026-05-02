@@ -1,146 +1,71 @@
 ---
 name: clawchat
-description: Activate and operate the ClawChat Hermes gateway integration. Use when the user asks to configure ClawChat, says they have a ClawChat activation code, or asks whether ClawChat is connected.
-version: 1.0.0
+description: Activate and operate the ClawChat Hermes gateway integration with the registered ClawChat plugin tools. Use when the user asks to activate ClawChat, manage the connected ClawChat account, inspect ClawChat contacts, or upload ClawChat media.
+version: 1.1.0
 metadata:
   hermes:
-    tags: [clawchat, gateway, activation, messaging]
+    tags: [clawchat, gateway, activation, messaging, tools]
 ---
 
 # ClawChat Gateway
 
-Use this skill when the user wants to activate or configure ClawChat for Hermes.
+You are running inside Hermes with ClawChat plugin tools already registered. For ClawChat account, contact, activation, profile, avatar, and media operations, call the registered `clawchat_*` plugin tools directly.
 
-## Hermes Python
+Do not use execute, shell scripts, Python snippets, curl, or direct HTTP requests to perform these ClawChat API actions. Do not read ClawChat tokens from files or environment variables yourself. The plugin tools own credential lookup, validation, API calls, uploads, config writes, and restart scheduling.
 
-Always use the Hermes Python environment, not the system Python, when running ClawChat commands:
+If a matching `clawchat_*` tool is unavailable, say that the ClawChat plugin tool is unavailable instead of falling back to `execute`.
 
-```bash
-PY="${HERMES_PYTHON:-}"
-if [ -z "$PY" ] && [ -n "${HERMES_DIR:-}" ] && [ -x "$HERMES_DIR/.venv/bin/python" ]; then
-  PY="$HERMES_DIR/.venv/bin/python"
-fi
-if [ -z "$PY" ] && [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then
-  PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
-fi
-if [ -z "$PY" ] && [ -x /opt/hermes/.venv/bin/python ]; then
-  PY="/opt/hermes/.venv/bin/python"
-fi
-if [ -z "$PY" ]; then
-  PY="python3"
-fi
-```
+## Activation
 
-## Activation Flow
+Use `clawchat_activate` when the user provides a ClawChat activation code or asks to activate/bind ClawChat.
 
-If the user asks to activate ClawChat but has not provided a code, ask for the ClawChat activation code.
-
-If the user provides a code, extract it verbatim. Examples:
+Extract the code verbatim. Examples:
 
 - `clawchat 的激活码是 R4E1IW` -> `R4E1IW`
 - `ClawChat激活码: R4E1IW` -> `R4E1IW`
 - `激活 clawchat R4E1IW` -> `R4E1IW`
 
-Then run with the Hermes Python environment, not the system Python:
+After `clawchat_activate` succeeds, tell the user ClawChat activation is complete and the Hermes gateway restart has been scheduled in the background. Do not run a separate gateway restart command.
 
-```bash
-"$PY" -m clawchat_gateway.activate CODE
-```
+## Account Profile
 
-If Hermes uses a non-default home or agent directory, preserve the current environment, especially `HERMES_HOME`.
+Use `clawchat_get_account_profile` when the user asks for the connected ClawChat account profile, nickname, avatar, bio, user id, or current configured account.
 
-The activation command calls `/v1/agents/connect`, stores `CLAWCHAT_TOKEN` and optional `CLAWCHAT_REFRESH_TOKEN` in `$HERMES_HOME/.env`, stores `user_id`, `base_url`, and `websocket_url` in `config.yaml`, and configures ClawChat stream output.
+Use `clawchat_update_account_profile` when the user explicitly asks to update the connected ClawChat account:
 
-After activation succeeds, restart Hermes automatically before replying to the user. Prefer these commands in order:
+- For nickname/name changes, pass `nickname`.
+- For bio/self-introduction changes, pass `bio`.
+- For avatar URL changes, pass `avatar_url`.
+- You may pass more than one field when the user asks for multiple profile changes together.
 
-```bash
-if [ -n "${HERMES_DIR:-}" ] && [ -x "$HERMES_DIR/.venv/bin/hermes" ]; then
-  "$HERMES_DIR/.venv/bin/hermes" gateway restart
-elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/hermes" ]; then
-  "$HOME/.hermes/hermes-agent/.venv/bin/hermes" gateway restart
-elif [ -x /opt/hermes/.venv/bin/hermes ]; then
-  HERMES_HOME="${HERMES_HOME:-/opt/data}" /opt/hermes/.venv/bin/hermes gateway restart
-elif command -v hermes >/dev/null 2>&1; then
-  hermes gateway restart
-else
-  echo "warning: hermes restart command not found"
-fi
-```
+Do not use these tools for the Hermes/OpenClaw agent persona unless the user explicitly means the ClawChat account profile.
 
-If the restart command succeeds, tell the user ClawChat activation is complete and Hermes has been restarted. If restart fails, report that activation succeeded but restart must still be done manually.
+## User Profile
 
-## Update Nickname
+Use `clawchat_get_user_profile` only when the user provides a concrete ClawChat `userId` and asks to inspect that user's public profile.
 
-Use this flow when the user asks to change the ClawChat bot name, assistant name, display name, or nickname. Trigger phrases include:
+Do not infer a `userId` from a nickname or display name. If the user did not provide a `userId`, ask for it.
 
-- `你叫 小助手`
-- `把 ClawChat 昵称改成 小助手`
-- `change your name to Hermes Bot`
-- `update nickname to Hermes Bot`
+## Friends
 
-Extract the nickname exactly as requested, then run:
+Use `clawchat_list_account_friends` when the user asks for the connected ClawChat account's friends, contacts, friend list, or a paginated friend/contact view.
 
-```bash
-"$PY" -m clawchat_gateway.profile nickname "NEW_NICKNAME"
-```
+Default to `page=1` and `pageSize=20` unless the user asks for a specific page or size.
 
-If the command succeeds, tell the user the nickname was updated. If it fails because ClawChat is not activated, ask the user for the ClawChat activation code first.
+## Avatar Upload
 
-## Update Avatar
+Use `clawchat_upload_avatar_image` when the user provides an absolute local image path and asks to upload it for use as the ClawChat account avatar.
 
-Use this flow when the user asks to change the ClawChat avatar, upload an avatar, or use an attached image as the avatar.
+This upload tool returns a hosted avatar URL and does not update the account profile by itself. If the user asked to set the avatar, call `clawchat_update_account_profile` with the returned `avatar_url` after upload succeeds.
 
-Avatar updates require a local absolute file path. Do not pass an HTTP URL to the profile command. If the user sent an image through ClawChat, use the downloaded local media path exposed to the agent by the ClawChat runtime. If no local path is available, ask the user to provide an absolute local file path.
+If the user sent an image through ClawChat, use the local media path exposed by the ClawChat runtime. If no local path is available, ask for an absolute local image path.
 
-Always upload first, then update the profile with the uploaded URL. Do not call the profile update API directly with a local path.
+## Media Upload
 
-Run:
+Use `clawchat_upload_media_file` when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file.
 
-```bash
-"$PY" -m clawchat_gateway.profile avatar "/absolute/path/to/avatar.png"
-```
+Do not use `clawchat_upload_media_file` for account avatars; use `clawchat_upload_avatar_image` for avatar image uploads.
 
-The command enforces this sequence internally: upload the local file through `/v1/files/upload-url`, then update the ClawChat profile with the returned avatar URL.
+## Response Style
 
-## Defaults
-
-Default API endpoint:
-
-```text
-http://company.newbaselab.com:10086
-```
-
-Default WebSocket endpoint:
-
-```text
-ws://company.newbaselab.com:10086/ws
-```
-
-Do not call `connect-codes`; activation uses `/v1/agents/connect`.
-
-## Useful Checks
-
-Show current ClawChat config:
-
-```bash
-python - <<'PY'
-import yaml
-from pathlib import Path
-import os
-p = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "config.yaml"
-c = yaml.safe_load(p.read_text()) or {}
-print(yaml.safe_dump(c.get("platforms", {}).get("clawchat", {}), sort_keys=False))
-PY
-```
-
-Check gateway logs for connection state:
-
-```bash
-tail -n 120 ~/.hermes/logs/agent.log | grep -i clawchat
-```
-
-For Docker deployments, use the container log command appropriate to the environment, for example:
-
-```bash
-docker logs --since 10m hermes | grep -i clawchat
-```
+Report the result briefly in chat-native language. Include useful returned identifiers, URLs, nicknames, or counts when the tool returns them. If a tool returns an error, explain the error and the missing input or failing condition without trying an alternate shell/API path.

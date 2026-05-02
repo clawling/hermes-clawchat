@@ -1,3 +1,6 @@
+import sys
+import types
+
 from clawchat_gateway.config import ClawChatConfig
 
 
@@ -10,6 +13,7 @@ def test_config_defaults():
                 "extra": {
                     "websocket_url": "wss://chat.example/ws",
                     "token": "tok",
+                    "refresh_token": "rt",
                     "user_id": "u1",
                 }
             },
@@ -18,6 +22,7 @@ def test_config_defaults():
     assert cfg.websocket_url == "wss://chat.example/ws"
     assert cfg.base_url == ""
     assert cfg.token == "tok"
+    assert cfg.refresh_token == "rt"
     assert cfg.user_id == "u1"
     assert cfg.reply_mode == "stream"
     assert cfg.group_mode == "mention"
@@ -47,6 +52,7 @@ def test_config_accepts_nested_openclaw_names():
                     "websocketUrl": "wss://chat.example/ws",
                     "baseUrl": "https://api.example",
                     "token": "tok",
+                    "refreshToken": "rt",
                     "userId": "u1",
                     "replyMode": "stream",
                     "groupMode": "all",
@@ -75,6 +81,7 @@ def test_config_accepts_nested_openclaw_names():
     assert cfg.websocket_url == "wss://chat.example/ws"
     assert cfg.base_url == "https://api.example"
     assert cfg.token == "tok"
+    assert cfg.refresh_token == "rt"
     assert cfg.user_id == "u1"
     assert cfg.reply_mode == "stream"
     assert cfg.group_mode == "all"
@@ -92,3 +99,100 @@ def test_config_accepts_nested_openclaw_names():
     assert cfg.stream_flush_interval_ms == 100
     assert cfg.stream_min_chunk_chars == 8
     assert cfg.stream_max_buffer_chars == 512
+
+
+def test_config_reads_connection_credentials_from_env(monkeypatch):
+    monkeypatch.setenv("CLAWCHAT_WEBSOCKET_URL", "wss://env.example/ws")
+    monkeypatch.setenv("CLAWCHAT_BASE_URL", "https://env.example")
+    monkeypatch.setenv("CLAWCHAT_TOKEN", "env-token")
+    monkeypatch.setenv("CLAWCHAT_REFRESH_TOKEN", "env-refresh-token")
+    monkeypatch.setenv("CLAWCHAT_USER_ID", "env-user")
+
+    cfg = ClawChatConfig.from_platform_config(
+        type(
+            "PC",
+            (),
+            {
+                "extra": {
+                    "websocket_url": "wss://config.example/ws",
+                    "base_url": "https://config.example",
+                    "token": "config-token",
+                    "user_id": "config-user",
+                }
+            },
+        )()
+    )
+
+    assert cfg.websocket_url == "wss://env.example/ws"
+    assert cfg.base_url == "https://env.example"
+    assert cfg.token == "env-token"
+    assert cfg.refresh_token == "env-refresh-token"
+    assert cfg.user_id == "env-user"
+
+
+def test_config_reads_connection_credentials_from_hermes_env_file(tmp_path, monkeypatch):
+    hermes_home = tmp_path / "hermes"
+    hermes_home.mkdir()
+    (hermes_home / ".env").write_text(
+        "\n".join(
+            [
+                "CLAWCHAT_TOKEN=file-token",
+                "CLAWCHAT_REFRESH_TOKEN=file-refresh-token",
+                "export CLAWCHAT_USER_ID=file-user",
+                "CLAWCHAT_BASE_URL='https://file.example'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+    cfg = ClawChatConfig.from_platform_config(
+        type(
+            "PC",
+            (),
+            {
+                "extra": {
+                    "websocket_url": "wss://config.example/ws",
+                    "token": "config-token",
+                    "user_id": "config-user",
+                }
+            },
+        )()
+    )
+
+    assert cfg.websocket_url == "wss://config.example/ws"
+    assert cfg.base_url == "https://file.example"
+    assert cfg.token == "file-token"
+    assert cfg.refresh_token == "file-refresh-token"
+    assert cfg.user_id == "file-user"
+
+
+def test_config_prefers_hermes_env_api(monkeypatch):
+    hermes_cli_module = types.ModuleType("hermes_cli")
+    hermes_config_module = types.ModuleType("hermes_cli.config")
+    hermes_config_module.get_env_value = {
+        "CLAWCHAT_TOKEN": "api-token",
+        "CLAWCHAT_REFRESH_TOKEN": "api-refresh-token",
+        "CLAWCHAT_USER_ID": "api-user",
+    }.get
+    monkeypatch.setitem(sys.modules, "hermes_cli", hermes_cli_module)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", hermes_config_module)
+
+    cfg = ClawChatConfig.from_platform_config(
+        type(
+            "PC",
+            (),
+            {
+                "extra": {
+                    "websocket_url": "wss://config.example/ws",
+                    "token": "config-token",
+                    "user_id": "config-user",
+                }
+            },
+        )()
+    )
+
+    assert cfg.websocket_url == "wss://config.example/ws"
+    assert cfg.token == "api-token"
+    assert cfg.refresh_token == "api-refresh-token"
+    assert cfg.user_id == "api-user"
