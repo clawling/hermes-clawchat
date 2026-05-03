@@ -83,7 +83,9 @@ class ClawChatConfig:
     media_local_roots: tuple[str, ...] = field(default_factory=tuple)
     media_download_dir: str = "/tmp/clawchat-media"
     show_tools_output: bool = False
+    show_tool_progress: bool = False
     show_think_output: bool = False
+    enable_rich_interactions: bool = False
 
     @classmethod
     def from_platform_config(cls, platform_config: Any) -> "ClawChatConfig":
@@ -94,6 +96,17 @@ class ClawChatConfig:
             tuple(p.strip() for p in media_roots_env.split(os.pathsep) if p.strip())
             if media_roots_env
             else _get_alias(extra, "media_local_roots", "mediaLocalRoots", ())
+        )
+        show_tools_output = bool(
+            _get_alias(extra, "show_tools_output", "showToolsOutput", False)
+        )
+        show_tool_progress = bool(
+            _get_alias(
+                extra,
+                "show_tool_progress",
+                "showToolProgress",
+                show_tools_output,
+            )
         )
         return cls(
             websocket_url=_get_env("CLAWCHAT_WEBSOCKET_URL", "CLAWCHAT_WS_URL")
@@ -144,10 +157,17 @@ class ClawChatConfig:
             media_download_dir=_get_alias(
                 extra, "media_download_dir", "mediaDownloadDir", "/tmp/clawchat-media"
             ),
-            show_tools_output=bool(
-                _get_alias(extra, "show_tools_output", "showToolsOutput", False)
-            ),
+            show_tools_output=show_tools_output,
+            show_tool_progress=show_tool_progress,
             show_think_output=bool(
                 _get_alias(extra, "show_think_output", "showThinkOutput", False)
+            ),
+            enable_rich_interactions=bool(
+                _get_alias(
+                    extra,
+                    "enable_rich_interactions",
+                    "enableRichInteractions",
+                    False,
+                )
             ),
         )

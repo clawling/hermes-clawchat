@@ -64,6 +64,8 @@ _TOOL_PROGRESS_LINE_RE = re.compile(
     r"^\s*(?:[^\w\s`]{1,4}\s*)?[A-Za-z_][\w.-]*(?:\([^)]*\))?"
     r"(?:\.\.\.|: \"|\n)",
 )
+_APPROVE_COMMAND_RE = re.compile(r"(?<!\w)/approve(?!\w)", re.IGNORECASE)
+_DENY_COMMAND_RE = re.compile(r"(?<!\w)/(?:deny|reject)(?!\w)", re.IGNORECASE)
 _ACTIVATION_INTENT_RE = re.compile(
     r"(clawchat|claw\s*chat|激活码|激活|activate|activation|invite\s*code)",
     re.IGNORECASE,
@@ -183,6 +185,9 @@ class ClawChatAdapter(BasePlatformAdapter):
         logger.info("clawchat state -> %s", state.value)
 
     async def _on_message(self, frame: dict[str, Any]) -> None:
+        if frame.get("event") == "interaction.submit":
+            await self._handle_interaction_submit(frame)
+            return
         inbound = parse_inbound_message(frame, self._clawchat_config)
         if inbound is None:
             logger.warning(
@@ -246,6 +251,49 @@ class ClawChatAdapter(BasePlatformAdapter):
             inbound.chat_id,
             inbound.sender_id,
         )
+
+    async def _handle_interaction_submit(self, frame: dict[str, Any]) -> None:
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        text = self._interaction_submit_text(payload)
+        if text is None:
+            logger.warning(
+                "clawchat interaction submit dropped chat_id=%s reason=unsupported_action",
+                frame.get("chat_id"),
+            )
+            return
+        sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
+        chat_id = str(frame.get("chat_id") or "")
+        sender_id = str(sender.get("id") or "")
+        source = self.build_source(
+            chat_id=chat_id,
+            user_id=sender_id,
+            chat_name=chat_id,
+            chat_type=self._map_source_chat_type(str(frame.get("chat_type") or "direct")),
+        )
+        event = MessageEvent(
+            text=text,
+            message_type=MessageType.TEXT,
+            source=source,
+            raw_message={
+                "clawchat_chat_type": frame.get("chat_type"),
+                "clawchat_interaction_submit": payload,
+                "clawchat_raw": frame,
+            },
+        )
+        await self.handle_message(event)
+
+    def _interaction_submit_text(self, payload: dict[str, Any]) -> str | None:
+        action_id = str(payload.get("action_id") or "").strip().lower()
+        action_payload = payload.get("action_payload")
+        decision = ""
+        if isinstance(action_payload, dict):
+            decision = str(action_payload.get("decision") or "").strip().lower()
+        value = decision or action_id
+        if value in {"approve", "approved", "allow", "yes"}:
+            return "/approve"
+        if value in {"deny", "denied", "reject", "rejected", "no"}:
+            return "/deny"
+        return None
 
     def _should_attach_activation_skill(self, text: str) -> bool:
         if not text:
@@ -596,7 +644,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         return _HERMES_STREAM_CURSOR_RE.sub("", filtered)
 
     def _should_suppress_tool_progress(self, content: str) -> bool:
-        if self._clawchat_config.show_tools_output:
+        if self._clawchat_config.show_tool_progress:
             return False
         lines = [line for line in content.splitlines() if line.strip()]
         if not lines:
@@ -610,7 +658,10 @@ class ClawChatAdapter(BasePlatformAdapter):
         kwargs: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         fragments: list[dict[str, Any]] = []
-        if content:
+        rich_fragment = self._build_interaction_fragment(content, metadata, kwargs)
+        if rich_fragment is not None:
+            fragments.append(rich_fragment)
+        elif content:
             fragments.append({"kind": "text", "text": content})
 
         merged_kwargs = kwargs or {}
@@ -633,6 +684,72 @@ class ClawChatAdapter(BasePlatformAdapter):
         if not fragments:
             fragments.append({"kind": "text", "text": ""})
         return fragments
+
+    def _build_interaction_fragment(
+        self,
+        content: str,
+        metadata: Any,
+        kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if not self._clawchat_config.enable_rich_interactions:
+            return None
+        explicit = self._extract_interaction(metadata, kwargs)
+        if explicit is not None:
+            return explicit
+        if not (_APPROVE_COMMAND_RE.search(content) and _DENY_COMMAND_RE.search(content)):
+            return None
+        return {
+            "kind": "approval_request",
+            "title": "Approval required",
+            "fallback_text": content,
+            "state": "pending",
+            "actions": [
+                {
+                    "id": "approve",
+                    "label": "Approve",
+                    "style": "primary",
+                    "payload": {"decision": "approve"},
+                },
+                {
+                    "id": "deny",
+                    "label": "Deny",
+                    "style": "danger",
+                    "payload": {"decision": "deny"},
+                },
+            ],
+        }
+
+    def _extract_interaction(
+        self,
+        metadata: Any,
+        kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        for carrier in (metadata, kwargs or {}):
+            if not isinstance(carrier, dict):
+                continue
+            raw = carrier.get("clawchat_interaction") or carrier.get("interaction")
+            if not isinstance(raw, dict):
+                continue
+            kind = raw.get("kind")
+            fallback_text = raw.get("fallback_text")
+            actions = raw.get("actions")
+            if kind not in {"approval_request", "action_card"}:
+                continue
+            if not isinstance(fallback_text, str) or not fallback_text:
+                continue
+            if not isinstance(actions, list) or not all(isinstance(item, dict) for item in actions):
+                continue
+            fragment: dict[str, Any] = {
+                "kind": kind,
+                "fallback_text": fallback_text,
+                "actions": actions,
+            }
+            if isinstance(raw.get("title"), str):
+                fragment["title"] = raw["title"]
+            if isinstance(raw.get("state"), str):
+                fragment["state"] = raw["state"]
+            return fragment
+        return None
 
     async def _build_media_fragments(
         self,

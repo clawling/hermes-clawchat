@@ -223,6 +223,49 @@ async def test_on_message_maps_reply_preview_to_message_event_fields():
     assert event.reply_to_text == "older message"
 
 
+async def test_on_message_maps_interaction_submit_approve_to_text_command():
+    adapter = _make_adapter()
+    frame = {
+        "event": "interaction.submit",
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message_id": "msg-1",
+            "fragment_index": 0,
+            "fragment_kind": "approval_request",
+            "action_id": "approve",
+            "action_payload": {"decision": "approve"},
+        },
+    }
+
+    await adapter._on_message(frame)
+
+    assert adapter.handled[0].text == "/approve"
+    assert adapter.handled[0].raw_message["clawchat_interaction_submit"] == frame["payload"]
+
+
+async def test_on_message_maps_interaction_submit_deny_to_text_command():
+    adapter = _make_adapter()
+    frame = {
+        "event": "interaction.submit",
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message_id": "msg-1",
+            "fragment_index": 0,
+            "fragment_kind": "approval_request",
+            "action_id": "deny",
+            "action_payload": {"decision": "deny"},
+        },
+    }
+
+    await adapter._on_message(frame)
+
+    assert adapter.handled[0].text == "/deny"
+
+
 async def test_send_emits_message_reply_for_static_mode():
     adapter = _make_adapter(reply_mode="static")
 
@@ -284,7 +327,7 @@ async def test_send_suppresses_gateway_tool_progress_by_default():
 
 
 async def test_send_preserves_gateway_tool_progress_when_enabled():
-    adapter = _make_adapter(reply_mode="stream", show_tools_output=True)
+    adapter = _make_adapter(reply_mode="stream", show_tool_progress=True)
 
     await adapter.send(
         chat_id="u1",
@@ -295,6 +338,47 @@ async def test_send_preserves_gateway_tool_progress_when_enabled():
         "message.created",
         "message.add",
     ]
+
+
+async def test_send_suppresses_gateway_tool_progress_when_raw_tools_visible_but_progress_hidden():
+    adapter = _make_adapter(
+        reply_mode="stream",
+        show_tools_output=True,
+        show_tool_progress=False,
+    )
+
+    result = await adapter.send(
+        chat_id="u1",
+        content='🧭 browser_navigate: "https://example.com/image.png"',
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames == []
+
+
+async def test_send_shows_tool_progress_while_filtering_raw_tool_output():
+    adapter = _make_adapter(
+        reply_mode="stream",
+        show_tools_output=False,
+        show_tool_progress=True,
+    )
+
+    await adapter.send(
+        chat_id="u1",
+        content='🧭 browser_navigate: "https://example.com/image.png"',
+    )
+    await adapter.send(
+        chat_id="u1",
+        content='<tool_result>{"secret": true}</tool_result>visible',
+    )
+
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == [
+        "message.created",
+        "message.add",
+        "message.created",
+        "message.add",
+    ]
+    assert adapter._connection.sent_frames[3]["payload"]["fragments"][0]["text"] == "visible"
 
 
 async def test_edit_message_suppresses_gateway_tool_progress_by_default():
@@ -310,6 +394,82 @@ async def test_edit_message_suppresses_gateway_tool_progress_by_default():
 
     assert result.success is True
     assert adapter._connection.sent_frames == []
+
+
+async def test_send_emits_rich_approval_fragment_when_enabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=True)
+    fallback = "Tool wants to continue. Reply /approve to proceed or /deny to cancel."
+
+    await adapter.send(chat_id="u1", content=fallback)
+
+    fragments = adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"]
+    assert fragments == [
+        {
+            "kind": "approval_request",
+            "title": "Approval required",
+            "fallback_text": fallback,
+            "state": "pending",
+            "actions": [
+                {
+                    "id": "approve",
+                    "label": "Approve",
+                    "style": "primary",
+                    "payload": {"decision": "approve"},
+                },
+                {
+                    "id": "deny",
+                    "label": "Deny",
+                    "style": "danger",
+                    "payload": {"decision": "deny"},
+                },
+            ],
+        }
+    ]
+
+
+async def test_send_keeps_approval_text_fallback_when_rich_interactions_disabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=False)
+    fallback = "Tool wants to continue. Reply /approve to proceed or /deny to cancel."
+
+    await adapter.send(chat_id="u1", content=fallback)
+
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": fallback}
+    ]
+
+
+async def test_send_emits_metadata_action_card_when_enabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=True)
+
+    await adapter.send(
+        chat_id="u1",
+        content="Run cleanup?",
+        metadata={
+            "clawchat_interaction": {
+                "kind": "action_card",
+                "title": "Cleanup",
+                "fallback_text": "Run cleanup? Reply /approve or /deny.",
+                "state": "pending",
+                "actions": [
+                    {"id": "approve", "label": "Run", "style": "primary"},
+                    {"id": "deny", "label": "Cancel", "style": "secondary"},
+                ],
+            }
+        },
+    )
+
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {
+            "kind": "action_card",
+            "title": "Cleanup",
+            "fallback_text": "Run cleanup? Reply /approve or /deny.",
+            "state": "pending",
+            "actions": [
+                {"id": "approve", "label": "Run", "style": "primary"},
+                {"id": "deny", "label": "Cancel", "style": "secondary"},
+            ],
+        }
+    ]
 
 
 async def test_send_logs_static_reply(caplog):

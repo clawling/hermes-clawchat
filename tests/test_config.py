@@ -39,7 +39,9 @@ def test_config_defaults():
     assert cfg.ack_auto_resend_on_timeout is False
     assert cfg.media_local_roots == ()
     assert cfg.show_tools_output is False
+    assert cfg.show_tool_progress is False
     assert cfg.show_think_output is False
+    assert cfg.enable_rich_interactions is False
 
 
 def test_config_accepts_nested_openclaw_names():
@@ -66,7 +68,9 @@ def test_config_accepts_nested_openclaw_names():
                     "ack_auto_resend_on_timeout": True,
                     "mediaLocalRoots": ["/tmp/a", "/tmp/b"],
                     "showToolsOutput": True,
+                    "showToolProgress": False,
                     "show_think_output": True,
+                    "enableRichInteractions": True,
                     "stream": {
                         "flushIntervalMs": 100,
                         "min_chunk_chars": 8,
@@ -95,7 +99,9 @@ def test_config_accepts_nested_openclaw_names():
     assert cfg.ack_auto_resend_on_timeout is True
     assert cfg.media_local_roots == ("/tmp/a", "/tmp/b")
     assert cfg.show_tools_output is True
+    assert cfg.show_tool_progress is False
     assert cfg.show_think_output is True
+    assert cfg.enable_rich_interactions is True
     assert cfg.stream_flush_interval_ms == 100
     assert cfg.stream_min_chunk_chars == 8
     assert cfg.stream_max_buffer_chars == 512
@@ -196,3 +202,22 @@ def test_config_prefers_hermes_env_api(monkeypatch):
     assert cfg.token == "api-token"
     assert cfg.refresh_token == "api-refresh-token"
     assert cfg.user_id == "api-user"
+
+
+def test_config_keeps_tool_progress_compatible_with_tools_output_when_omitted():
+    cfg = ClawChatConfig.from_platform_config(
+        type(
+            "PC",
+            (),
+            {
+                "extra": {
+                    "websocket_url": "wss://chat.example/ws",
+                    "token": "tok",
+                    "show_tools_output": True,
+                }
+            },
+        )()
+    )
+
+    assert cfg.show_tools_output is True
+    assert cfg.show_tool_progress is True

@@ -221,6 +221,29 @@ async def test_realtime_connect_payload_includes_device_id(monkeypatch):
         await conn.stop()
 
 
+async def test_connect_payload_advertises_interaction_capabilities_when_enabled(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(
+        _cfg(enable_rich_interactions=True),
+        on_message=on_message,
+    )
+    await conn.start()
+    try:
+        req = await _complete_handshake(srv)
+        assert req["payload"]["capabilities"] == {
+            "protocol": "clawchat.v2",
+            "rich_fragments": True,
+            "interactive_actions": True,
+        }
+    finally:
+        await conn.stop()
+
+
 async def test_wrong_request_id_times_out_without_ready(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
@@ -356,6 +379,39 @@ async def test_ready_dispatches_message_reply(monkeypatch):
         )
         await _wait_until(lambda: len(seen_messages) == 1)
         assert seen_messages[0]["event"] == "message.reply"
+    finally:
+        await conn.stop()
+
+
+async def test_ready_dispatches_interaction_submit(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    seen_messages = []
+
+    async def on_message(frame):
+        seen_messages.append(frame)
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    await conn.start()
+    try:
+        await _complete_handshake(srv)
+        await _wait_until(lambda: conn.is_ready)
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "interaction.submit",
+                "chat_id": "u1",
+                "sender": {"id": "u1"},
+                "payload": {
+                    "message_id": "msg-1",
+                    "fragment_index": 0,
+                    "fragment_kind": "approval_request",
+                    "action_id": "approve",
+                },
+            }
+        )
+        await _wait_until(lambda: len(seen_messages) == 1)
+        assert seen_messages[0]["event"] == "interaction.submit"
     finally:
         await conn.stop()
 

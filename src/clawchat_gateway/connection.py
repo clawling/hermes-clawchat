@@ -284,7 +284,7 @@ class ClawChatConnection:
         ):
             await self._maybe_finish_handshake(frame)
             return
-        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply"}:
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply", "interaction.submit"}:
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
             fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
@@ -327,11 +327,18 @@ class ClawChatConnection:
             client_version=CLIENT_VERSION,
             sign=sign,
             device_id=get_device_id(),
-            capabilities={"protocol": "clawchat.v2"},
+            capabilities=self._connect_capabilities(),
         )
         connect_req["payload"]["nonce"] = nonce
         logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)
         await self._ws.send(encode_frame(connect_req))
+
+    def _connect_capabilities(self) -> dict[str, Any]:
+        capabilities: dict[str, Any] = {"protocol": "clawchat.v2"}
+        if self._cfg.enable_rich_interactions:
+            capabilities["rich_fragments"] = True
+            capabilities["interactive_actions"] = True
+        return capabilities
 
     async def _maybe_finish_handshake(self, frame: dict[str, Any]) -> None:
         if self._pending_connect_id and is_hello_ok(frame, self._pending_connect_id):
