@@ -1,8 +1,8 @@
 # Installer — `src/clawchat_gateway/install.py`
 
-Anchor-patch based installer for integrating ClawChat into hermes-agent. Also copies `skills/clawchat/` into `$HERMES_HOME/skills/clawchat/`, seeds streaming defaults in `config.yaml`, and sets `CLAWCHAT_ALLOW_ALL_USERS=true` in `$HERMES_HOME/.env`.
+Legacy anchor-patch installer for integrating ClawChat into older hermes-agent builds. Hermes v0.12.0+ does not need this installer for platform registration: the plugin calls `ctx.register_platform(...)` directly. The non-patching helpers in this module are still used by the modern plugin path to seed streaming defaults in `config.yaml` and set `CLAWCHAT_ALLOW_ALL_USERS=true` in `$HERMES_HOME/.env`.
 
-Exposed as:
+Patch mode remains exposed for backwards compatibility:
 - Python: `from clawchat_gateway.install import main; main([...])`
 - Module: `python -m clawchat_gateway.install`
 - Console script: `clawchat-gateway-install` (per `pyproject.toml`)
@@ -48,9 +48,9 @@ class Patch:
 | `apply_patch` | `(patch: Patch) -> bool` | Returns `True` if a new block was inserted. `False` if the file is missing, the start marker is already present, or the anchor was not found. Writes the file back in place. |
 | `remove_patch` | `(patch: Patch) -> bool` | Strips the start…end block (DOTALL, MULTILINE, allowing leading indent). Returns `False` if the file or marker is missing. |
 
-## The patch set — `build_patches(hermes_dir: Path) -> list[Patch]`
+## Legacy patch set — `build_patches(hermes_dir: Path) -> list[Patch]`
 
-Returns the full list of patches, targeting files under `hermes_dir`:
+Returns the full list of patches for Hermes builds without `ctx.register_platform`, targeting files under `hermes_dir`:
 
 | id | target file | anchor (substring) | payload (summary) |
 |---|---|---|---|
@@ -73,6 +73,8 @@ Returns the full list of patches, targeting files under `hermes_dir`:
 **Editing guidance.** If you change a patch payload, bump or re-scope the `id` (or uninstall + reinstall) so existing deployments don't skip your new content because the old start marker is already present.
 
 ## Supporting filesystem operations
+
+Selected helpers are shared by both paths: modern v0.12+ platform registration calls `configure_clawchat_allow_all()` and `configure_clawchat_streaming()` through `_configure_runtime_defaults()`, while legacy installs call the full set from `main()`.
 
 | Function | Signature | Purpose |
 |---|---|---|
@@ -98,6 +100,8 @@ Returns the full list of patches, targeting files under `hermes_dir`:
 | `_read_state` | `(hermes_dir: Path) -> dict \| None` | Returns `None` if missing or malformed. |
 
 ## CLI — `main(argv=None) -> int`
+
+The CLI is primarily for legacy patch installs, checks, and uninstalls. On Hermes v0.12.0+ normal installation should use `hermes plugins install ...` and `hermes plugins enable clawchat`; direct CLI patching is unnecessary unless you are intentionally supporting an older Hermes checkout.
 
 Flags:
 - `--hermes-dir` (default: `$HERMES_AGENT_DIR` or `~/.hermes/hermes-agent`).

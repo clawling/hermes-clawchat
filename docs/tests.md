@@ -110,7 +110,7 @@ Matrix of `parse_inbound_message` edge cases:
 
 ### `tests/test_install.py`
 
-- `test_build_patches_contains_expected_ids` — all 14 named patches are present.
+- `test_build_patches_contains_expected_ids` — the expected legacy patch ids are present.
 - `test_apply_and_remove_patch_with_indentation` — indentation is preserved and removal is idempotent.
 - `test_cli_platform_registry_patch_inserts_clawchat` — specific check for the CLI registry patch.
 - `test_install_state_round_trip` — state file write/read.

@@ -36,7 +36,7 @@ Tracks an in-flight streaming reply keyed by `message_id`. `last_text` feeds `co
 
 ### `check_clawchat_requirements(platform_config) -> bool`
 
-Verifies `websockets` is importable and that `platform_config.extra` has non-empty `websocket_url` and `token`. Logs a warning and returns `False` otherwise. Used by the `adapter_factory` patch in hermes-agent's `gateway/run.py`.
+Verifies `websockets` is importable and that `platform_config.extra` has non-empty `websocket_url` and `token`. Logs a warning and returns `False` otherwise. Used by the legacy `adapter_factory` patch; the v0.12+ platform registry path has equivalent requirement/config validators in the plugin entrypoint.
 
 ## `ClawChatAdapter`
 
@@ -82,7 +82,7 @@ class ClawChatAdapter(BasePlatformAdapter):
 |---|---|---|
 | `async send` | `(chat_id, content="", reply_to=None, metadata=None, **kwargs) -> SendResult` | Suppresses tool-progress noise according to `show_tool_progress`, filters `<think>` / raw tool blocks according to `show_*_output`, builds fragments, then either emits a single `message.reply` (static mode — non-stream config or media-only/rich interaction) or `message.created` + `message.add` with the first delta. Registers an `_ActiveRun` for the new `message_id`. |
 | `async edit_message` | `(chat_id, message_id, content) -> SendResult` | Resolve active run; compute delta against `run.last_text`; emit `message.add` with `sequence += 1`. No-op when delta is empty. Returns `success=False, error="no active run for message_id"` if the run was discarded. |
-| `async on_run_complete` | `(chat_id, final_text, message_id=None) -> None` | Flush final delta, emit `message.done` + `message.reply` (with `reply_to_message_id` preserved from the initial `send`). Discards the run from tracking maps. Wired up by the `post_stream_hook` / `normal_stream_done_hook` install patches. |
+| `async on_run_complete` | `(chat_id, final_text, message_id=None) -> None` | Flush final delta, emit `message.done` + `message.reply` (with `reply_to_message_id` preserved from the initial `send`). Discards the run from tracking maps. Hermes v0.12+ reaches this through the registered platform adapter lifecycle; legacy installs wire it through `post_stream_hook` / `normal_stream_done_hook` patches. |
 | `async send_image` | `(chat_id, image_url, caption=None, reply_to=None, metadata=None) -> SendResult` | Merge `[image_url]` into `metadata["media_urls"]` and delegate to `send`. |
 | `async send_image_file` | `(chat_id, image_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Same shape as `send_image` for local paths. |
 

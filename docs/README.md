@@ -6,10 +6,10 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 
 | File | Purpose | Doc |
 |---|---|---|
-| `__init__.py` (repo root) | Hermes plugin entrypoint — registers tools + skill, auto-installs gateway | [plugin-entrypoint.md](./plugin-entrypoint.md) |
+| `__init__.py` (repo root) | Hermes plugin entrypoint — registers the ClawChat platform, tools, and skill | [plugin-entrypoint.md](./plugin-entrypoint.md) |
 | `plugin.yaml` | Hermes plugin manifest | [plugin-entrypoint.md](./plugin-entrypoint.md) |
 | `src/clawchat_gateway/__init__.py` | Package surface | [plugin-entrypoint.md](./plugin-entrypoint.md) |
-| `src/clawchat_gateway/install.py` | Anchor-patch installer for hermes-agent | [installer.md](./installer.md) |
+| `src/clawchat_gateway/install.py` | Runtime default helpers + legacy anchor-patch installer | [installer.md](./installer.md) |
 | `src/clawchat_gateway/adapter.py` | `ClawChatAdapter` — hermes-agent platform adapter | [adapter.md](./adapter.md) |
 | `src/clawchat_gateway/connection.py` | WebSocket supervisor, handshake, send queue | [connection.md](./connection.md) |
 | `src/clawchat_gateway/protocol.py` | Frame encode/decode + builder functions | [clawchat-protocal.md](./clawchat-protocal.md) |
