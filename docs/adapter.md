@@ -85,6 +85,10 @@ class ClawChatAdapter(BasePlatformAdapter):
 | `async on_run_complete` | `(chat_id, final_text, message_id=None) -> None` | Flush final delta, emit `message.done` + `message.reply` (with `reply_to_message_id` preserved from the initial `send`). Discards the run from tracking maps. Hermes v0.12+ reaches this through the registered platform adapter lifecycle; legacy installs wire it through `post_stream_hook` / `normal_stream_done_hook` patches. |
 | `async send_image` | `(chat_id, image_url, caption=None, reply_to=None, metadata=None) -> SendResult` | Merge `[image_url]` into `metadata["media_urls"]` and delegate to `send`. |
 | `async send_image_file` | `(chat_id, image_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Same shape as `send_image` for local paths. |
+| `async send_video` | `(chat_id, video_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Merge `[video_path]` into `metadata["media_urls"]` and delegate to `send`, producing a `video` fragment after upload. |
+| `async send_audio` | `(chat_id, audio_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Merge `[audio_path]` into `metadata["media_urls"]` and delegate to `send`, producing an `audio` fragment after upload. |
+| `async send_voice` | `(chat_id, audio_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Hermes voice-compatible alias for `send_audio`; emits the protocol `audio` fragment kind. |
+| `async send_document` | `(chat_id, file_path, caption=None, file_name=None, reply_to=None, **kwargs) -> SendResult` | Merge `[file_path]` into `metadata["media_urls"]` and delegate to `send`, producing a `file` fragment after upload. |
 
 ### Internal helpers
 

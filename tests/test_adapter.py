@@ -909,6 +909,196 @@ async def test_send_image_file_uploads_local_image(monkeypatch, tmp_path):
     ]
 
 
+async def test_send_video_uploads_local_video(monkeypatch, tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    video_path = allowed / "clip.mp4"
+    video_path.write_bytes(b"mp4-bytes")
+
+    adapter = _make_adapter(media_local_roots=[str(allowed)])
+
+    async def fake_upload(urls, **kwargs):
+        assert urls == [str(video_path)]
+        return [
+            {
+                "kind": "video",
+                "url": "https://cdn.example.com/clip.mp4",
+                "mime": "video/mp4",
+                "size": 9,
+                "name": "clip.mp4",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_video(
+        chat_id="u1",
+        video_path=str(video_path),
+        caption="watch",
+        reply_to="msg-1",
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames[0]["event"] == "message.reply"
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "watch"},
+        {
+            "kind": "video",
+            "url": "https://cdn.example.com/clip.mp4",
+            "mime": "video/mp4",
+            "size": 9,
+            "name": "clip.mp4",
+        },
+    ]
+
+
+async def test_send_document_uploads_local_file(monkeypatch, tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    file_path = allowed / "report.pdf"
+    file_path.write_bytes(b"pdf-bytes")
+
+    adapter = _make_adapter(media_local_roots=[str(allowed)])
+
+    async def fake_upload(urls, **kwargs):
+        assert urls == [str(file_path)]
+        return [
+            {
+                "kind": "file",
+                "url": "https://cdn.example.com/report.pdf",
+                "mime": "application/pdf",
+                "size": 9,
+                "name": "report.pdf",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_document(
+        chat_id="u1",
+        file_path=str(file_path),
+        caption="read",
+        reply_to="msg-1",
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames[0]["event"] == "message.reply"
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "read"},
+        {
+            "kind": "file",
+            "url": "https://cdn.example.com/report.pdf",
+            "mime": "application/pdf",
+            "size": 9,
+            "name": "report.pdf",
+        },
+    ]
+
+
+async def test_send_audio_uploads_local_audio(monkeypatch, tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    audio_path = allowed / "voice.mp3"
+    audio_path.write_bytes(b"mp3-bytes")
+
+    adapter = _make_adapter(media_local_roots=[str(allowed)])
+
+    async def fake_upload(urls, **kwargs):
+        assert urls == [str(audio_path)]
+        return [
+            {
+                "kind": "audio",
+                "url": "https://cdn.example.com/voice.mp3",
+                "mime": "audio/mpeg",
+                "size": 9,
+                "name": "voice.mp3",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_audio(
+        chat_id="u1",
+        audio_path=str(audio_path),
+        caption="listen",
+        reply_to="msg-1",
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames[0]["event"] == "message.reply"
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "listen"},
+        {
+            "kind": "audio",
+            "url": "https://cdn.example.com/voice.mp3",
+            "mime": "audio/mpeg",
+            "size": 9,
+            "name": "voice.mp3",
+        },
+    ]
+
+
+async def test_send_voice_uploads_local_audio(monkeypatch, tmp_path):
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    audio_path = allowed / "note.m4a"
+    audio_path.write_bytes(b"m4a-bytes")
+
+    adapter = _make_adapter(media_local_roots=[str(allowed)])
+
+    async def fake_upload(urls, **kwargs):
+        assert urls == [str(audio_path)]
+        return [
+            {
+                "kind": "audio",
+                "url": "https://cdn.example.com/note.m4a",
+                "mime": "audio/mp4",
+                "size": 9,
+                "name": "note.m4a",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_voice(
+        chat_id="u1",
+        audio_path=str(audio_path),
+        caption="listen",
+        reply_to="msg-1",
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames[0]["event"] == "message.reply"
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "listen"},
+        {
+            "kind": "audio",
+            "url": "https://cdn.example.com/note.m4a",
+            "mime": "audio/mp4",
+            "size": 9,
+            "name": "note.m4a",
+        },
+    ]
+
+
+async def test_send_image_file_fails_when_media_url_fragment_is_missing(monkeypatch):
+    adapter = _make_adapter()
+
+    async def fake_upload(urls, **kwargs):
+        return []
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_image_file(
+        chat_id="u1",
+        image_path="/tmp/reply.png",
+    )
+
+    assert result.success is False
+    assert result.error == "failed to build media fragments"
+    assert adapter._connection.sent_frames == []
+
+
 async def test_send_image_file_treats_hermes_file_wrapped_remote_url_as_remote(
     monkeypatch,
 ):

@@ -8,8 +8,7 @@ A Hermes skill installed into `$HERMES_HOME/skills/clawchat/` by `install.instal
 name: clawchat
 description: Activate and operate the ClawChat Hermes gateway integration with
   the registered ClawChat plugin tools. Use when the user asks to activate
-  ClawChat, manage the connected ClawChat account, inspect ClawChat contacts,
-  or upload ClawChat media.
+  ClawChat, manage the connected ClawChat account, or inspect ClawChat contacts.
 version: 1.1.0
 metadata:
   hermes:
@@ -28,8 +27,6 @@ The skill body encodes these flows (full text lives in `skills/clawchat/SKILL.md
 | **User Profile** | Use `clawchat_get_user_profile` only when the user provides a concrete ClawChat `userId`; ask for the id instead of guessing. |
 | **Friends** | Use `clawchat_list_account_friends` for friends/contacts queries, defaulting to `page=1` and `pageSize=20` unless specified. |
 | **Avatar Upload** | Use `clawchat_upload_avatar_image` for an absolute local image path. If the user wants to set the avatar, follow with `clawchat_update_account_profile` using the returned `avatar_url`. |
-| **Send Media In Current Chat** | For chat attachments, put `MEDIA:/absolute/local/path` in the final response so Hermes emits native ClawChat media. Do not call `clawchat_upload_media_file` just to send a current-chat attachment, and do not write `MEDIA:https://...`. |
-| **Media Upload** | Use `clawchat_upload_media_file` for non-avatar files that need a ClawChat-accessible URL. |
 
 ## Consistency contract
 

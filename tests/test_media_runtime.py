@@ -45,12 +45,11 @@ def test_local_path_allows_nested_paths_under_allowed_root(tmp_path: Path):
     assert ensure_allowed_local_path(str(inside), [str(allowed)]) == inside
 
 
-def test_local_path_fails_closed_without_allowed_roots(tmp_path: Path):
+def test_local_path_allows_existing_path_without_configured_allowed_roots(tmp_path: Path):
     inside = tmp_path / "a.txt"
     inside.write_text("x")
 
-    with pytest.raises(ValueError):
-        ensure_allowed_local_path(str(inside), [])
+    assert ensure_allowed_local_path(str(inside), []) == inside
 
 
 def test_derive_base_url_prefers_websocket_origin_for_media_gateway():
@@ -130,6 +129,40 @@ async def test_upload_outbound_media_uploads_local_path(tmp_path: Path):
             "mime": "image/png",
             "size": len(b"png-bytes"),
             "name": "avatar.png",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_upload_outbound_media_uploads_local_path_without_media_roots(
+    tmp_path: Path,
+):
+    image_path = tmp_path / "generated.png"
+    image_path.write_bytes(b"png-bytes")
+
+    async def fake_upload(*, base_url: str, token: str, buffer: bytes, filename: str, mime: str):
+        return UploadMediaResult(
+            url="https://cdn.example.com/generated.png",
+            mime=mime,
+            size=len(buffer),
+        )
+
+    fragments = await upload_outbound_media(
+        [str(image_path)],
+        base_url="https://api.example.com",
+        websocket_url="",
+        token="tk",
+        media_local_roots=[],
+        upload_file=fake_upload,
+    )
+
+    assert fragments == [
+        {
+            "kind": "image",
+            "url": "https://cdn.example.com/generated.png",
+            "mime": "image/png",
+            "size": len(b"png-bytes"),
+            "name": "generated.png",
         }
     ]
 

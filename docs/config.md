@@ -46,7 +46,7 @@ Field groups:
 - **Reconnect** — initial delay, max delay, jitter ratio, max retries (`float("inf")` ≈ forever).
 - **Heartbeat** — `ping_interval` / `ping_timeout` for the WebSocket library (in ms; divided by 1000 in `connection.py`).
 - **Ack** — `ack_timeout_ms`, `ack_auto_resend_on_timeout` (wired through but not currently active in the send path).
-- **Media** — `media_local_roots` is the allowlist for local file paths in outbound uploads (`media_runtime.ensure_allowed_local_path`); `media_download_dir` is where inbound media is cached.
+- **Media** — `media_local_roots` is an optional allowlist for local file paths in outbound uploads (`media_runtime.ensure_allowed_local_path`). When omitted, ClawChat follows Hermes platform-adapter behavior and accepts local paths handed over by `MEDIA:` delivery. `media_download_dir` is where inbound media is cached.
 - **Filtering** — `show_tools_output`, `show_think_output` — when `False`, the adapter strips `<think>` and tool-invocation blocks from visible content.
 - **Progress and interactions** — `show_tool_progress` controls Hermes gateway progress ticker visibility separately from raw tool output; when omitted it inherits `show_tools_output` for compatibility. `enable_rich_interactions` allows rich `approval_request` / `action_card` fragments; when `False`, existing text fallback such as `/approve` and `/deny` is preserved.
 

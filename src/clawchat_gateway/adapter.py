@@ -337,6 +337,12 @@ class ClawChatAdapter(BasePlatformAdapter):
             return SendResult(success=True)
         visible_content = self._filter_output_content(content or "")
         fragments = await self._build_fragments(visible_content, metadata, kwargs)
+        if self._has_requested_media(metadata, kwargs) and not self._has_media_fragment(fragments):
+            logger.warning(
+                "clawchat send failed chat_id=%s reason=media_fragment_missing",
+                chat_id,
+            )
+            return SendResult(success=False, error="failed to build media fragments")
         message_id = new_frame_id("msg")
         logger.info(
             "clawchat send start chat_id=%s chat_type=%s mode=%s text_len=%d fragments=%d reply_to=%s",
@@ -577,6 +583,74 @@ class ClawChatAdapter(BasePlatformAdapter):
             metadata=merged_metadata,
         )
 
+    async def send_video(
+        self,
+        chat_id: str,
+        video_path: str,
+        caption: str | None = None,
+        reply_to: str | None = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        merged_metadata = dict(kwargs.get("metadata") or {})
+        merged_metadata["media_urls"] = [normalize_outbound_media_reference(video_path)]
+        return await self.send(
+            chat_id=chat_id,
+            content=caption or "",
+            reply_to=reply_to,
+            metadata=merged_metadata,
+        )
+
+    async def send_audio(
+        self,
+        chat_id: str,
+        audio_path: str,
+        caption: str | None = None,
+        reply_to: str | None = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        merged_metadata = dict(kwargs.get("metadata") or {})
+        merged_metadata["media_urls"] = [normalize_outbound_media_reference(audio_path)]
+        return await self.send(
+            chat_id=chat_id,
+            content=caption or "",
+            reply_to=reply_to,
+            metadata=merged_metadata,
+        )
+
+    async def send_voice(
+        self,
+        chat_id: str,
+        audio_path: str,
+        caption: str | None = None,
+        reply_to: str | None = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        return await self.send_audio(
+            chat_id=chat_id,
+            audio_path=audio_path,
+            caption=caption,
+            reply_to=reply_to,
+            **kwargs,
+        )
+
+    async def send_document(
+        self,
+        chat_id: str,
+        file_path: str,
+        caption: str | None = None,
+        file_name: str | None = None,
+        reply_to: str | None = None,
+        **kwargs: Any,
+    ) -> SendResult:
+        merged_metadata = dict(kwargs.get("metadata") or {})
+        merged_metadata["media_urls"] = [normalize_outbound_media_reference(file_path)]
+        return await self.send(
+            chat_id=chat_id,
+            content=caption or "",
+            reply_to=reply_to,
+            metadata=merged_metadata,
+        )
+
     def _resolve_chat_type(self, metadata: Any, kwargs: dict[str, Any]) -> str:
         if isinstance(metadata, dict) and isinstance(metadata.get("chat_type"), str):
             return metadata["chat_type"]
@@ -631,6 +705,21 @@ class ClawChatAdapter(BasePlatformAdapter):
     def _should_use_static_mode(self, fragments: list[dict[str, Any]]) -> bool:
         has_media = any(fragment.get("kind") != "text" for fragment in fragments)
         return self._clawchat_config.reply_mode != "stream" or has_media
+
+    def _has_requested_media(self, metadata: Any, kwargs: dict[str, Any]) -> bool:
+        if isinstance(metadata, dict):
+            raw_urls = metadata.get("media_urls") or []
+            if any(isinstance(url, str) for url in raw_urls):
+                return True
+        raw_kw_urls = kwargs.get("media_urls") or []
+        return any(isinstance(url, str) for url in raw_kw_urls)
+
+    def _has_media_fragment(self, fragments: list[dict[str, Any]]) -> bool:
+        return any(
+            fragment.get("kind") in {"image", "audio", "video", "file"}
+            and isinstance(fragment.get("url"), str)
+            for fragment in fragments
+        )
 
     def _filter_output_content(self, content: str) -> str:
         filtered = content

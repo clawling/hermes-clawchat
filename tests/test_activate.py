@@ -35,6 +35,7 @@ def test_persist_activation_writes_secrets_to_env_and_config_without_secrets(
     assert "refresh_token" not in extra
     assert extra["user_id"] == "agent-1"
     assert extra["websocket_url"] == "ws://company.newbaselab.com:10086/ws"
+    assert "media_local_roots" not in extra
     assert config["display"]["platforms"]["clawchat"]["tool_progress"] == "off"
     assert result["restart_required"] is True
 

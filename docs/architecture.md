@@ -19,7 +19,7 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
    - `clawchat_list_account_friends` — list friends with pagination.
    - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
    - `clawchat_upload_avatar_image` — upload a local avatar image and return a hosted URL.
-   - `clawchat_upload_media_file` — upload a local media/file attachment and return a public URL.
+   - `clawchat_upload_media_file` — upload a local media/file attachment and return a ClawChat media render URL.
 6. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
 
 ## Runtime data flow
@@ -41,7 +41,7 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 - **Outbound** send: `adapter.send()` → optional `compute_delta` (stream_buffer) → `protocol.build_message_*` → `ClawChatConnection.send_frame()` → WebSocket.
 - **Inbound** message: WebSocket → `ClawChatConnection._read_loop` → `_dispatch_inbound` → `adapter._on_message` → `parse_inbound_message` → `adapter._handle_inbound` → `handle_message` (hermes-agent dispatches to the LLM).
 - **Run lifecycle**: Hermes v0.12+ calls adapter lifecycle hooks registered through the platform registry. `adapter.on_run_complete` emits `message.done` + final `message.reply` after LLM streaming finishes. Legacy patched installs wire the same method through the `post_stream_hook` / `normal_stream_done_hook` insertions.
-- **Media**: inbound media URLs are downloaded by `media_runtime.download_inbound_media`; outbound media is uploaded via `upload_outbound_media`, which enforces `media_local_roots` for local paths.
+- **Media**: inbound media URLs are downloaded by `media_runtime.download_inbound_media`; outbound local files from Hermes `MEDIA:` delivery are uploaded via `upload_outbound_media`. Local path roots are unrestricted by default, matching Hermes platform adapters; `media_local_roots` / `CLAWCHAT_MEDIA_LOCAL_ROOTS` can be set explicitly to tighten that policy.
 
 ## Key design choices
 

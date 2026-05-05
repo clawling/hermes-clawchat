@@ -83,7 +83,7 @@ Each handler is `async`, takes `(args: dict, **kw)`, logs `task_id`, and returns
 - `clawchat_list_account_friends` (👥) — list account friends with pagination.
 - `clawchat_update_account_profile` (✏️) — update nickname, avatar URL, and/or bio.
 - `clawchat_upload_avatar_image` (🖼️) — upload a local avatar image and return its URL.
-- `clawchat_upload_media_file` (📎) — upload a local file/media attachment and return its URL.
+- `clawchat_upload_media_file` (📎) — upload a local file/media attachment and return its ClawChat media render URL.
 
 ### `register(ctx)` — plugin entrypoint
 

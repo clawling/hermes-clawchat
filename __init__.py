@@ -555,8 +555,8 @@ def _register_tools(ctx) -> None:
         {
             "name": "clawchat_upload_media_file",
             "description": _direct_tool_description(
-                "Upload a local file or media file to ClawChat media storage (max 20MB) and return the public URL/shareable URL. "
-                "TRIGGER — invoke when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file. "
+                "Upload a local file or media file to ClawChat media storage (max 20MB) and return the ClawChat media URL used by message fragments to render the file. "
+                "TRIGGER — invoke when the user provides an absolute local file path and asks to upload it for ClawChat rendering, or when a ClawChat message needs a media URL for an image/file fragment. "
                 "Do not use this tool to send an attachment in the current chat; for that, put MEDIA:/absolute/local/path in the chat response so Hermes sends it as native ClawChat media. "
                 "Do not use this for account avatar changes; use `clawchat_upload_avatar_image` for avatar images."
             ),

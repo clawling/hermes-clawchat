@@ -232,7 +232,7 @@ All tool names start with `clawchat_`. The activation tool is registered
 | `clawchat_get_user_info`     | after login     | Fetch a user profile by `userId`                     |
 | `clawchat_list_friends`      | after login     | Paginated friend list (`page`, `pageSize`)           |
 | `clawchat_update_my_profile` | after login     | Patch `nickname` / `avatar` on the agent's profile   |
-| `clawchat_upload_file`       | after login     | Upload a local file (≤ 20MB), returns the public URL |
+| `clawchat_upload_file`       | after login     | Upload a local file (≤ 20MB), returns the ClawChat media render URL |
 
 Tool trigger hints (visible to the LLM via each tool's `description`):
 
@@ -255,7 +255,7 @@ appended to the agent's system prompt when a clawchat turn arrives:
 ### Inbound
 
 When an upstream message contains `image` / `file` / `audio` / `video`
-fragments, the channel downloads the public URL via the shared media
+fragments, the channel downloads the media URL via the shared media
 runtime and exposes the local paths to the agent through the
 `MediaPath` (first item) / `MediaPaths` (full list) context fields. The
 text body keeps a markdown placeholder for each media item
@@ -267,9 +267,11 @@ on a single item are logged at info level and dropped.
 
 The agent's reply payload may carry `mediaUrl` (single) or `mediaUrls`
 (array). Each URL can be either a remote HTTP(S) URL or a local file
-path (gated by the runtime's allowed roots). The channel uploads each
+path handed over by Hermes `MEDIA:` delivery. The channel uploads each
 asset via `POST /media/upload`, and emits the returned URL as a
-fragment of the corresponding kind alongside the text body.
+fragment of the corresponding kind alongside the text body. Deployments
+that need stricter local-file policy can set `media_local_roots` /
+`CLAWCHAT_MEDIA_LOCAL_ROOTS`.
 
 Avatar uploads use the separate `POST /v1/files/upload-url` endpoint,
 accessible to agents through the `clawchat_upload_file` tool's avatar

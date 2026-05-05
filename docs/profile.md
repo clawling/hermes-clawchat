@@ -81,7 +81,7 @@ Backing handler: `tools.upload_avatar_image(path)`.
 
 ### `upload-media <path>`
 
-Upload a local file or media attachment and return the public URL.
+Upload a local file or media attachment and return the ClawChat media URL consumed by message fragments when rendering the attachment.
 
 ```bash
 python -m clawchat_gateway.profile upload-media /absolute/path/to/file.pdf

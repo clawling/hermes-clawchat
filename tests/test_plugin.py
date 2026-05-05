@@ -212,7 +212,7 @@ def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
         assert "Do not use execute" in tool["schema"]["description"]
 
 
-def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(monkeypatch):
+def test_upload_media_tool_description_is_render_url_not_current_chat_delivery(monkeypatch):
     module = _load_plugin_module()
     monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
@@ -221,7 +221,8 @@ def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(mo
     module.register(ctx)
 
     description = ctx.tools["clawchat_upload_media_file"]["schema"]["description"]
-    assert "shareable URL" in description
+    assert "media URL used by message fragments to render" in description
+    assert "shareable" not in description
     assert "Do not use this tool to send an attachment in the current chat" in description
     assert "MEDIA:/absolute/local/path" in description
 
@@ -238,15 +239,16 @@ def test_clawchat_skill_uses_plugin_tools_not_shell_commands():
     assert "-m clawchat_gateway" not in skill
 
 
-def test_clawchat_skill_distinguishes_media_delivery_from_media_link_uploads():
+def test_clawchat_skill_does_not_describe_media_upload_or_message_delivery():
     skill = (Path(__file__).resolve().parents[1] / "skills" / "clawchat" / "SKILL.md").read_text(
         encoding="utf-8"
     )
 
-    assert "Send Media In Current Chat" in skill
-    assert "MEDIA:/absolute/local/path" in skill
-    assert "Do not call `clawchat_upload_media_file` just to send an attachment" in skill
-    assert "Do not write `MEDIA:https://" in skill
+    assert "Send Media In Current Chat" not in skill
+    assert "Media Upload" not in skill
+    assert "clawchat_upload_media_file" not in skill
+    assert "MEDIA:/absolute/local/path" not in skill
+    assert "media rendering URL for message fragments" not in skill
 
 
 def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):

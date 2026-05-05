@@ -53,18 +53,17 @@ class DownloadedMedia:
 
 ### `ensure_allowed_local_path(path: str, allowed_roots: Sequence[str]) -> Path`
 
-Resolves `path` to an absolute `Path`, resolves every root, and requires the resolved path to be equal to or under one of the roots. Raises:
+Resolves `path` to an absolute `Path`. When `allowed_roots` is empty, the resolved path is returned unchanged so ClawChat matches Hermes' native `MEDIA:` delivery model. When roots are configured, every root is resolved and the path must be equal to or under one of them. Raises:
 
-- `ValueError("no allowed roots configured")` when `allowed_roots` is empty.
-- `ValueError("path not under allowed roots: ...")` otherwise.
+- `ValueError("path not under allowed roots: ...")` when roots are configured and the path is outside them.
 
-This is enforced before reading any local file for upload, which is the path traversal guard for the outbound media flow.
+This optional guard is enforced before reading a local file for upload.
 
 ## Local/remote loaders
 
 | Function | Signature | Purpose |
 |---|---|---|
-| `_load_local_media` | `(path: str, media_local_roots: Sequence[str]) -> LoadedMedia` | Validate via `ensure_allowed_local_path`, read bytes, guess MIME. |
+| `_load_local_media` | `(path: str, media_local_roots: Sequence[str]) -> LoadedMedia` | Resolve and optionally validate via `ensure_allowed_local_path`, read bytes, guess MIME. |
 | `_load_remote_media` | `(url: str) -> LoadedMedia` | HTTP `urlopen`, read bytes, take `Content-Type` or guess from URL. |
 
 ## Download
@@ -98,7 +97,7 @@ Thread wrapper around `_upload_media_sync`.
 For each URL:
 
 1. Normalize Hermes media references, including `file://https%3A//...` wrappers.
-2. Load from local (subject to `media_local_roots` guard) or remote.
+2. Load from local or remote. Local paths are unrestricted by default; configured `media_local_roots` tighten the policy.
 3. Upload via the supplied `upload_file` (default `_upload_media`).
 4. Emit a fragment dict:
 

@@ -299,6 +299,7 @@ def test_configure_clawchat_streaming_writes_config(tmp_path: Path, monkeypatch)
     assert "transport: edit" in content
     assert "edit_interval: 0.25" in content
     assert "buffer_threshold: 16" in content
+    assert "media_local_roots:" not in content
     assert "tool_progress: 'off'" in content or "tool_progress: off" in content
     assert "show_reasoning: false" in content
 
