@@ -60,6 +60,16 @@ This upload tool returns a hosted avatar URL and does not update the account pro
 
 If the user sent an image through ClawChat, use the local media path exposed by the ClawChat runtime. If no local path is available, ask for an absolute local image path.
 
+## Send Media In Current Chat
+
+When the user asks you to send, show, attach, or reply with an image, file, audio, or video in the current ClawChat chat, use Hermes native media delivery.
+
+Put the local file path directly in your final chat response as `MEDIA:/absolute/local/path`. Hermes will remove that directive from visible text and send the file as a native ClawChat media fragment.
+
+If you need to create or generate the media, create it as a local file first, then include its absolute local path with `MEDIA:/absolute/local/path`.
+
+Do not call `clawchat_upload_media_file` just to send an attachment in the current chat. Do not write `MEDIA:https://...`; `MEDIA:` should point to a local file path.
+
 ## Media Upload
 
 Use `clawchat_upload_media_file` when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file.

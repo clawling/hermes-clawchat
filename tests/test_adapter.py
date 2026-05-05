@@ -907,3 +907,41 @@ async def test_send_image_file_uploads_local_image(monkeypatch, tmp_path):
             "name": "reply.png",
         },
     ]
+
+
+async def test_send_image_file_treats_hermes_file_wrapped_remote_url_as_remote(
+    monkeypatch,
+):
+    adapter = _make_adapter()
+    uploaded = []
+
+    async def fake_upload(urls, **kwargs):
+        uploaded.append({"urls": urls, "kwargs": kwargs})
+        return [
+            {
+                "kind": "image",
+                "url": "https://cdn.example.com/reply.png",
+                "mime": "image/png",
+                "size": 9,
+                "name": "reply.png",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_image_file(
+        chat_id="u1",
+        image_path="file://https%3A//clawchat.example.com/media/reply.png",
+    )
+
+    assert result.success is True
+    assert uploaded[0]["urls"] == ["https://clawchat.example.com/media/reply.png"]
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {
+            "kind": "image",
+            "url": "https://cdn.example.com/reply.png",
+            "mime": "image/png",
+            "size": 9,
+            "name": "reply.png",
+        },
+    ]

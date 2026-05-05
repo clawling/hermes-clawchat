@@ -184,6 +184,35 @@ async def test_upload_outbound_media_skips_single_failed_item(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
+async def test_upload_outbound_media_uses_uploaded_media_url_when_refetch_fails(monkeypatch):
+    def fail_fetch(url: str):
+        raise OSError("blocked")
+
+    monkeypatch.setattr(
+        "clawchat_gateway.media_runtime._load_remote_media",
+        fail_fetch,
+    )
+
+    fragments = await upload_outbound_media(
+        ["https://clawchat.example.com/media/reply.png"],
+        base_url="https://api.example.com",
+        websocket_url="",
+        token="tk",
+        media_local_roots=[],
+    )
+
+    assert fragments == [
+        {
+            "kind": "image",
+            "url": "https://clawchat.example.com/media/reply.png",
+            "mime": "image/png",
+            "size": 0,
+            "name": "reply.png",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_download_inbound_media_resolves_relative_url_and_writes_local_file(
     monkeypatch, tmp_path: Path
 ):

@@ -24,6 +24,7 @@ from clawchat_gateway.inbound import InboundMessage, parse_inbound_message
 from clawchat_gateway.media_runtime import (
     download_inbound_media,
     infer_media_kind_from_mime,
+    normalize_outbound_media_reference,
     upload_outbound_media,
 )
 from clawchat_gateway.protocol import (
@@ -551,7 +552,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         metadata: Any = None,
     ) -> SendResult:
         merged_metadata = dict(metadata or {})
-        merged_metadata["media_urls"] = [image_url]
+        merged_metadata["media_urls"] = [normalize_outbound_media_reference(image_url)]
         return await self.send(
             chat_id=chat_id,
             content=caption or "",
@@ -568,7 +569,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         **kwargs: Any,
     ) -> SendResult:
         merged_metadata = dict(kwargs.get("metadata") or {})
-        merged_metadata["media_urls"] = [image_path]
+        merged_metadata["media_urls"] = [normalize_outbound_media_reference(image_path)]
         return await self.send(
             chat_id=chat_id,
             content=caption or "",
@@ -669,10 +670,18 @@ class ClawChatAdapter(BasePlatformAdapter):
         if isinstance(metadata, dict):
             raw_urls = metadata.get("media_urls") or []
             if isinstance(raw_urls, list):
-                media_urls.extend(url for url in raw_urls if isinstance(url, str))
+                media_urls.extend(
+                    normalize_outbound_media_reference(url)
+                    for url in raw_urls
+                    if isinstance(url, str)
+                )
         raw_kw_urls = merged_kwargs.get("media_urls") or []
         if isinstance(raw_kw_urls, list):
-            media_urls.extend(url for url in raw_kw_urls if isinstance(url, str))
+            media_urls.extend(
+                normalize_outbound_media_reference(url)
+                for url in raw_kw_urls
+                if isinstance(url, str)
+            )
 
         uploaded_fragments = await self._build_media_fragments(
             media_urls=media_urls,

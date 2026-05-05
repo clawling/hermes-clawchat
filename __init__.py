@@ -247,9 +247,11 @@ def _register_platform(ctx) -> bool:
         emoji="💬",
         platform_hint=(
             "You are on ClawChat, a chat platform with structured text and media fragments. "
-            "Keep replies compact and chat-native. You can send media files natively: "
-            "include MEDIA:/absolute/path/to/file in your response. Images, audio, video, "
-            "and files are emitted as native ClawChat fragments."
+            "Keep replies compact and chat-native. To send an image, audio, video, or file "
+            "in the current chat, include MEDIA:/absolute/local/path in your response; "
+            "Hermes emits that local file as a native ClawChat fragment. Do not call "
+            "clawchat_upload_media_file just to send an attachment in the current chat. "
+            "Do not write MEDIA:https://...; use the local file path instead."
         ),
     )
     logger.info("ClawChat registered Hermes platform via plugin registry")
@@ -555,6 +557,7 @@ def _register_tools(ctx) -> None:
             "description": _direct_tool_description(
                 "Upload a local file or media file to ClawChat media storage (max 20MB) and return the public URL/shareable URL. "
                 "TRIGGER — invoke when the user provides an absolute local file path and asks to upload, share, or create a ClawChat-accessible link for that file. "
+                "Do not use this tool to send an attachment in the current chat; for that, put MEDIA:/absolute/local/path in the chat response so Hermes sends it as native ClawChat media. "
                 "Do not use this for account avatar changes; use `clawchat_upload_avatar_image` for avatar images."
             ),
             "parameters": {

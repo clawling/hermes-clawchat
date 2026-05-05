@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from collections.abc import Sequence
 from dataclasses import dataclass
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import unquote, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 
@@ -76,6 +76,38 @@ def _guess_mime(filename: str, default: str = "application/octet-stream") -> str
 def _is_remote_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"}
+
+
+def normalize_outbound_media_reference(value: str) -> str:
+    normalized = value.strip()
+    if not normalized.startswith("file://"):
+        return normalized
+
+    decoded = unquote(normalized[7:])
+    if decoded.startswith(("http://", "https://")):
+        return decoded
+    for scheme in ("http", "https"):
+        prefix = f"{scheme}:/"
+        if decoded.startswith(prefix) and not decoded.startswith(f"{scheme}://"):
+            return f"{scheme}://{decoded[len(prefix):].lstrip('/')}"
+    return decoded
+
+
+def _is_uploaded_media_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and parsed.path.startswith("/media/")
+
+
+def _uploaded_media_fragment(url: str) -> dict[str, object]:
+    name = Path(urlparse(url).path).name or "media"
+    mime = _guess_mime(name)
+    return {
+        "kind": infer_media_kind_from_mime(mime),
+        "url": url,
+        "mime": mime,
+        "size": 0,
+        "name": name,
+    }
 
 
 def _resolve_inbound_media_url(
@@ -198,7 +230,8 @@ async def upload_outbound_media(
     resolved_base_url = derive_base_url(websocket_url=websocket_url, base_url=base_url)
     uploader = upload_file or _upload_media
     fragments: list[dict[str, object]] = []
-    for url in urls:
+    for raw_url in urls:
+        url = normalize_outbound_media_reference(raw_url)
         try:
             if _is_remote_url(url):
                 loaded = await asyncio.to_thread(_load_remote_media, url)
@@ -223,6 +256,8 @@ async def upload_outbound_media(
                 }
             )
         except Exception:
+            if _is_uploaded_media_url(url):
+                fragments.append(_uploaded_media_fragment(url))
             continue
     return fragments
 
