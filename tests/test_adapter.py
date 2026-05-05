@@ -387,6 +387,35 @@ async def test_stream_filters_incomplete_think_and_tool_output_before_delta():
     assert adapter._connection.sent_frames[2]["payload"]["fragments"][0]["delta"] == " done"
 
 
+async def test_stream_strips_trailing_typing_cursor_before_diffing():
+    adapter = _make_adapter(reply_mode="stream")
+
+    first = await adapter.send(chat_id="u1", content="hello ▉")
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hello world ▉",
+    )
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hello world!",
+        finalize=True,
+    )
+
+    add_frames = [f for f in adapter._connection.sent_frames if f["event"] == "message.add"]
+    assert [f["payload"]["fragments"][0]["delta"] for f in add_frames] == [
+        "hello",
+        " world",
+        "!",
+    ]
+    assert all(
+        "▉" not in f["payload"]["fragments"][0]["text"]
+        and "▉" not in f["payload"]["fragments"][0]["delta"]
+        for f in add_frames
+    )
+
+
 async def test_edit_message_emits_message_add_for_stream_mode():
     adapter = _make_adapter(reply_mode="stream")
     first = await adapter.send(chat_id="u1", content="hello")

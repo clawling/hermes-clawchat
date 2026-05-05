@@ -63,6 +63,11 @@ _TOOL_PROGRESS_LINE_RE = re.compile(
     r"^\s*(?:[^\w\s`]{1,4}\s*)?[A-Za-z_][\w.-]*(?:\([^)]*\))?"
     r"(?:\.\.\.|: \"|\n)",
 )
+# Hermes streams append a typing-cursor block character to every intermediate
+# chunk's tail. Strip it so compute_delta's prefix check stays stable across
+# chunks (otherwise every delta degrades to the full accumulated text).
+_STREAMING_CURSOR_RE = re.compile(r"\s*[▀-▟]+\s*\Z")
+
 _ACTIVATION_INTENT_RE = re.compile(
     r"(clawchat|claw\s*chat|激活码|激活|activate|activation|invite\s*code)",
     re.IGNORECASE,
@@ -551,6 +556,7 @@ class ClawChatAdapter(BasePlatformAdapter):
             filtered = _TOOL_FENCE_OPEN_RE.sub("", filtered)
             filtered = _TOOL_TAG_BLOCK_RE.sub("", filtered)
             filtered = _TOOL_TAG_OPEN_RE.sub("", filtered)
+        filtered = _STREAMING_CURSOR_RE.sub("", filtered)
         return filtered
 
     def _should_suppress_tool_progress(self, content: str) -> bool:
