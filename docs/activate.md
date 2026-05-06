@@ -12,7 +12,8 @@ Exposed as both a Python API (used by the `clawchat_activate` tool handler) and 
 | `_load_config` | `() -> tuple[Path, dict]` | Load `~/.hermes/config.yaml`; returns `(path, {})` if missing or malformed. Does not raise. |
 | `_write_config` | `(config_path: Path, config: dict) -> None` | Serialise via `yaml.safe_dump(..., allow_unicode=False, sort_keys=False)`; creates parent dirs. |
 | `_env_path` | `() -> Path` | `$HERMES_HOME/.env`. |
-| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Upsert selected `KEY=value` lines in `.env`; preserve unrelated lines; remove keys whose value is `None`. |
+| `_validate_env_value` | `(key: str, value: str) -> str` | Reject `\n` / `\r` in `.env` values to keep the line-based format intact. Raises `ValueError` when invalid; returns `value` otherwise. |
+| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Upsert selected `KEY=value` lines in `.env`; preserve unrelated lines; remove keys whose value is `None`. Each non-`None` value goes through `_validate_env_value`. |
 | `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
 
 ## `persist_activation`
@@ -75,10 +76,17 @@ The caller (`_handle_clawchat_activate` in `__init__.py`) appends `ok: True` and
 ## CLI — `main(argv=None) -> int`
 
 ```
-usage: python -m clawchat_gateway.activate [--base-url URL] CODE
+usage: python -m clawchat_gateway.activate [--base-url URL] [--no-restart] CODE
 ```
 
-- `code` — positional, required.
+- `code` — positional, required. `.strip()`-ed before being passed to `activate(...)`.
 - `--base-url` — default `DEFAULT_BASE_URL`.
+- `--no-restart` — skip the detached `hermes gateway restart` that would otherwise be dispatched after activation succeeds. Useful when chaining the CLI with another orchestrator that controls restart timing.
 
-Runs `asyncio.run(activate(...))`, pretty-prints the payload (`ensure_ascii=False, indent=2`), exits 0 on success. API errors bubble up as exceptions (no try/except wrapper in `main`), so the CLI will crash with a traceback on transport / auth failure.
+Runs `asyncio.run(activate(...))`. On success (and unless `--no-restart` is passed):
+
+1. Imports `clawchat_gateway.restart.schedule_gateway_restart` and calls it with `delay_seconds=2`.
+2. Augments the printed payload with `restart_scheduled: True`, `restart_delay_seconds: 2`, `restart_command: <resolved sh -lc string>`, and `restart_message: "ClawChat activation saved. Hermes gateway restart dispatched in the background."`.
+3. Pretty-prints the payload (`ensure_ascii=False, indent=2`) and exits 0.
+
+API errors bubble up as exceptions (no try/except wrapper in `main`), so the CLI crashes with a traceback on transport / auth failure. The Hermes tool handler `_handle_clawchat_activate` catches these and converts them to a `_tool_error` envelope; it also schedules the restart on its own path independent of the CLI flag.

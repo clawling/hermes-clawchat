@@ -91,14 +91,14 @@ Final state is `CLOSED`.
 | Method | Purpose |
 |---|---|
 | `async _flush_send_queue(ws)` | Sets `_flushing_send_queue=True`, pops & sends from the deque in order. Resets the flag in `finally`. |
-| `_enqueue_text(text, *, front=False)` | Push onto the deque; when full, drop the oldest (or the re-queued front if `front=True`). |
+| `_enqueue_text(text, *, front=False)` | Append `text` to the deque (or prepend when `front=True`, used when re-queuing a frame whose `send` failed). When the queue is at `SEND_QUEUE_MAX`, drop one frame to make room: `popleft()` (oldest) on a normal append, or `pop()` (newest) when `front=True` so the re-queued frame keeps its head-of-queue position. |
 
 ### Read loop + dispatch
 
 | Method | Purpose |
 |---|---|
 | `async _read_loop(ws)` | `async for raw in ws`: decode; on malformed frame log a warning and continue; otherwise log and call `_dispatch_inbound`. |
-| `async _dispatch_inbound(frame)` | Route by `(type, event)`: `connect.challenge` → `_handle_challenge`; `res` / `hello-ok` / `hello-fail` → `_maybe_finish_handshake`; `message.send`, `message.reply`, and `interaction.submit` while `READY` → `_on_message(frame)`. All other frames are logged and ignored. |
+| `async _dispatch_inbound(frame)` | Route by `(type, event)`: `connect.challenge` → `_handle_challenge`; `res` / `hello-ok` / `hello-fail` → `_maybe_finish_handshake`; `message.send`, `message.reply`, and `interaction.submit` while `READY` → `_on_message(frame)`. The `interaction.submit` event carries approve/deny decisions from the ClawChat client back to `adapter._handle_interaction_submit`, which maps them onto Hermes' existing `/approve` / `/deny` text-command path. All other frames are logged and ignored. |
 | `async _handle_challenge(frame)` | Extract `nonce`, compute `sign = HMAC-SHA256(token, f"{client_id}|{nonce}")` via `protocol.compute_client_sign`, build a `connect` request (with `nonce` echoed into payload), record its `trace_id` as `_pending_connect_id`, send. |
 | `_connect_capabilities()` | Returns `{"protocol": "clawchat.v2"}` by default; adds `rich_fragments` and `interactive_actions` when `enable_rich_interactions` is enabled. |
 | `async _maybe_finish_handshake(frame)` | If `protocol.is_hello_ok(frame, _pending_connect_id)` is true, resolve `_hello_wait`. Otherwise log a warning. |

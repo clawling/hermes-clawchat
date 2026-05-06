@@ -7,7 +7,8 @@ author: NewBase
 requires_env:
   - CLAWCHAT_TOKEN
   - CLAWCHAT_REFRESH_TOKEN
-provides_hooks: []
+provides_hooks:
+  - pre_gateway_dispatch
 provides_tools:
   - clawchat_activate
   - clawchat_get_account_profile

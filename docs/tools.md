@@ -1,0 +1,64 @@
+# Tools — `src/clawchat_gateway/tools.py`
+
+Single source of truth for the six account/profile/media tool handlers. Both the Hermes tool registration in the repo-root `__init__.py` (`_handle_clawchat_*`) and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
+
+## Constants
+
+| Name | Value |
+|---|---|
+| `MAX_UPLOAD_BYTES` | `20 * 1024 * 1024` (20 MB) — enforced by `_validate_upload_path`. |
+
+## Error helpers
+
+| Helper | Returns |
+|---|---|
+| `_config_error(message)` | `{"error": "config", "message": ...}` |
+| `_validation_error(message)` | `{"error": "validation", "message": ...}` |
+| `_api_error(err: ClawChatApiError)` | `{"error": err.kind, "message": err.message, "meta"?: {status, path, code}}`. `meta` is omitted when no status/path/code is set. |
+| `_unknown_error(exc)` | `{"error": "unknown", "message": str(exc)}` |
+
+`err.kind` is one of `validation`, `transport`, `auth`, `api` (set by `ClawChatApiClient`). `_api_error` preserves it verbatim so callers can branch on the same vocabulary.
+
+## Construction helpers
+
+| Helper | Purpose |
+|---|---|
+| `_build_client() -> tuple[ClawChatApiClient \| None, dict \| None]` | Loads `ProfileConfig` via `profile.load_profile_config()`; returns `(client, None)` on success or `(None, _config_error(...))` if config is missing. Every handler calls this before issuing API requests. |
+| `_validate_upload_path(file_path) -> tuple[Path \| None, dict \| None]` | Requires non-empty string, absolute path, existing regular file, non-empty (>0 bytes), and within `MAX_UPLOAD_BYTES`. Returns `(path, None)` or `(None, validation_error)`. |
+| `_infer_mime(path)` | `mimetypes.guess_type` with `application/octet-stream` fallback. |
+
+## Handlers
+
+All handlers are `async`, return `dict[str, Any]`, and never raise. Each catches `ClawChatApiError` (via `_api_error`) and any other `Exception` (via `_unknown_error`).
+
+| Handler | Args | Backing API call | Validation |
+|---|---|---|---|
+| `get_account_profile()` | — | `client.get_my_profile()` (`GET /v1/users/me`) | — |
+| `get_user_profile(user_id)` | `user_id: str` | `client.get_user_info(user_id.strip())` (`GET /v1/users/{id}`) | `userId` required and non-blank. |
+| `list_account_friends(page=None, page_size=None)` | optional ints | `client.list_friends(page, page_size)` (`GET /v1/friends`) | `page >= 1` (default 1); `1 <= page_size <= 100` (default 20). |
+| `update_account_profile(nickname=None, avatar_url=None, bio=None)` | optional strings | `client.update_my_profile(**patch)` (`PATCH /v1/users/me`) | At least one of the three must be a `str`. Non-string values are dropped silently. |
+| `upload_avatar_image(file_path)` | `file_path: str` | `client.upload_avatar(...)` (`POST /v1/files/upload-url`) | `_validate_upload_path` (absolute, exists, non-empty, ≤20 MB). Returns `{url, size, mime}`. |
+| `upload_media_file(file_path)` | `file_path: str` | `client.upload_media(...)` (`POST /media/upload`) | Same as `upload_avatar_image`. Returns `{url, size, mime}`. |
+
+## Error envelope contract
+
+Both Hermes tool results (re-serialised via `_tool_result` in `__init__.py`) and `profile` CLI output (via `profile.main`) propagate this envelope unchanged:
+
+```json
+{
+  "error": "config | validation | auth | api | transport | unknown",
+  "message": "<human readable>",
+  "meta": { "status": 401, "path": "/v1/users/me", "code": 7 }
+}
+```
+
+The `meta` block is only present for `_api_error` results that carry one of `status` / `path` / `code`.
+
+## Adding a new handler
+
+1. Add the `async def` here, following the `(_build_client → call → catch ClawChatApiError → catch Exception)` pattern.
+2. Surface it from `__init__.py::_register_tools` with a JSON schema and an emoji; wire a thin `_handle_clawchat_<name>` dispatcher that wraps the result with `_tool_result(...)`.
+3. Surface it from `profile.py::main` as a subparser that calls the handler with `asyncio.run` and prints the same JSON.
+4. Add the tool name to `plugin.yaml::provides_tools`.
+5. Mirror the trigger/usage guidance in `skills/clawchat/SKILL.md`.
+6. Cover with `tests/test_tools.py` (handler-level) and `tests/test_plugin.py` (registration / schema).

@@ -1,0 +1,66 @@
+# Protocol — `src/clawchat_gateway/protocol.py`
+
+Pure frame builders, encoding helpers, and the auth-signature helper for ClawChat Protocol v2. No I/O, no async, no shared state — every function is a pure transform from arguments to a new frame `dict` (or string / bytes).
+
+For the wire-protocol semantics (event names, payload field meanings, error codes), see [`clawchat-protocol.md`](./clawchat-protocol.md). This file documents the Python module surface.
+
+## Encoding
+
+| Function | Signature | Behaviour |
+|---|---|---|
+| `encode_frame` | `(frame: dict) -> str` | `json.dumps(frame, separators=(",", ":"), ensure_ascii=False)` — compact, Unicode preserved. |
+| `decode_frame` | `(text: str) -> dict` | `json.loads`; raises `ValueError("frame must be object")` if the parsed value is not a dict. |
+| `new_frame_id` | `(prefix: str = "req") -> str` | `f"{prefix}-{uuid4()}"`. Used for `trace_id` on outbound frames. |
+
+## Auth signature
+
+| Function | Signature | Behaviour |
+|---|---|---|
+| `compute_client_sign` | `(client_id: str, nonce: str, token: str) -> str` | `HMAC-SHA256(token, f"{client_id}|{nonce}").hexdigest()` — lower-hex. Used in the `connect` request payload to prove possession of `token` against the server-issued nonce. |
+
+## Handshake helpers
+
+| Function | Signature | Behaviour |
+|---|---|---|
+| `extract_nonce` | `(frame: dict) -> str \| None` | Returns `frame.payload.nonce` if set, else `frame.payload.data.nonce`. Returns `None` when payload (or nested `data`) is not a dict. |
+| `is_hello_ok` | `(frame: dict, expected_request_id: str) -> bool` | Accepts either the realtime form (`event == "hello-ok"`) **or** the legacy res form (`type == "res"` and `requestId == expected_request_id` and `payload.type == "hello-ok"`). Returns `False` for non-dict payloads. |
+| `build_connect_request` | `(*, frame_id, token, client_id, client_version, sign, device_id=None, capabilities=None) -> dict` | Builds the `connect` event with `version: "2"`, `trace_id: frame_id`, and a payload of `{token, client_id, client_version, sign, device_id?, capabilities?}`. The connection module additionally injects `payload["nonce"]` after building. |
+
+## Message envelope
+
+`_message_envelope(event, *, chat_id, chat_type, payload)` is the shared inner helper. All `message.*` and `typing.*` builders go through it and produce frames of shape:
+
+```json
+{
+  "version": "2",
+  "event": "<event>",
+  "trace_id": "trace-<uuid>",
+  "chat_id": "<chat_id>",
+  "payload": { ... }
+}
+```
+
+`chat_type` is accepted by every builder for symmetry, but is currently not stamped into the envelope (the gateway derives it from the chat).
+
+## Streaming reply builders
+
+| Function | Outbound `event` | Payload shape |
+|---|---|---|
+| `build_message_created_event` | `message.created` | `{message_id}` |
+| `build_message_add_event` | `message.add` | `{message_id, sequence, mutation: {type:"append", target_fragment_index: null}, fragments:[{kind:"text", text:full_text, delta}], streaming:{status:"streaming", sequence, mutation_policy:"append_text_only", started_at:null, completed_at:null}, added_at:<now_ms>}` |
+| `build_message_done_event` | `message.done` | `{message_id, fragments, streaming:{status:"done", sequence, mutation_policy:"append_text_only", started_at:null, completed_at:<now_ms>}, completed_at:<now_ms>}` |
+| `build_message_failed_event` | `message.failed` | `{message_id, sequence, reason, streaming:{status:"failed", sequence, mutation_policy:"append_text_only", started_at:null, completed_at:<now_ms>}, completed_at:<now_ms>, fragments?: [{kind:"text", text:reason}]}`. `fragments` is omitted when `reason` is empty/whitespace. |
+
+## Static reply / typing
+
+| Function | Outbound `event` | Payload shape |
+|---|---|---|
+| `build_message_reply_event` | `message.reply` | `{message_mode:"normal", message:{body:{fragments}, context:{mentions:[], reply: {reply_to_msg_id, reply_preview:null} \| null}}, message_id?}`. `message_id` is included only when `include_message_id=True`. |
+| `build_typing_update_event` | `typing.update` | `{is_typing: bool}` |
+
+## Notes when extending
+
+- Every builder is **pure**: timestamps come from `time.time()` at call time, but no shared state or locks. Tests can call them directly and assert on the dict shape.
+- New events should preserve the `_message_envelope` skeleton (`version: "2"`, `trace_id` from `new_frame_id`) so the connection-layer logging and dispatcher remain uniform.
+- When you add a new `streaming.status` value, also update the corresponding state-machine handling in `adapter.py::_ActiveRun` and the receiver expectations in `clawchat-protocol.md`.
+- `is_hello_ok` accepts both legacy and realtime forms — extend the OR carefully, since loosening the legacy match silently allows stray `res` frames to terminate the handshake.

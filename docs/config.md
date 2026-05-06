@@ -7,6 +7,21 @@ Frozen dataclass wrapping the `extra` section of hermes-agent's `PlatformConfig`
 | Function | Signature | Purpose |
 |---|---|---|
 | `_get_alias` | `(data: dict, snake: str, camel: str, default=None) -> Any` | Look up `snake` first, then `camel`, else `default`. |
+| `_read_env_file_value` | `(name: str) -> str` | Parse `$HERMES_HOME/.env` (default `~/.hermes/.env`); strip `export ` prefix and `"`/`'` quoting; return value for `name` or `""`. |
+| `_read_hermes_env_value` | `(name: str) -> str` | Try `hermes_cli.config.get_env_value(name)`; return `""` on import / call failure. |
+| `_get_env` | `(*names: str) -> str` | Three-pass lookup over the candidate names. Pass 1: try every name against **process env**. Pass 2: try every name against the **Hermes env helper**. Pass 3: try every name against **`$HERMES_HOME/.env`**. Returns the first non-empty match (or `""`). The pass order means process env always wins over the file even if the file lists a different alias. |
+
+### Env-var resolution priority
+
+For connectivity values (`websocket_url`, `base_url`, `token`, `refresh_token`, `user_id`, `reply_mode`, `group_mode`, `media_local_roots`), `from_platform_config` calls `_get_env(...)` first and only falls back to `_get_alias(extra, ...)` if no env value is found. The full precedence is:
+
+1. **Process env** — `os.environ[name]` for any of the candidate names.
+2. **Hermes-managed env** — `hermes_cli.config.get_env_value(name)`, when the `hermes_cli` package is importable.
+3. **`$HERMES_HOME/.env`** — line-parsed by `_read_env_file_value`.
+4. **`extra` dict** — snake_case then camelCase via `_get_alias`.
+5. **Hardcoded default** — the field's dataclass default.
+
+Tunables that are not surfaced as `CLAWCHAT_*` env vars (stream/reconnect/heartbeat/ack values) skip steps 1–3 and resolve directly from `extra`.
 
 ## `ClawChatConfig`
 
@@ -16,6 +31,7 @@ class ClawChatConfig:
     websocket_url: str
     base_url: str = ""
     token: str = ""
+    refresh_token: str = ""
     user_id: str = ""
     reply_mode: str = "stream"
     group_mode: str = "mention"
@@ -40,7 +56,7 @@ class ClawChatConfig:
 
 Field groups:
 
-- **Connectivity** — `websocket_url`, `base_url`, `token`, `user_id`.
+- **Connectivity** — `websocket_url`, `base_url`, `token`, `refresh_token`, `user_id`. All are resolved via `_get_env(...)` first (see "Env-var resolution priority" above), then fall back to `extra`.
 - **Behaviour** — `reply_mode` (`"stream"` enables live delta sends; anything else falls back to a single `message.reply`), `group_mode` (`"mention"` filters inbound group messages to those that @mention `user_id`).
 - **Streaming tunables** — `stream_flush_interval_ms`, `stream_min_chunk_chars`, `stream_max_buffer_chars` (currently consumed externally / not by the adapter directly).
 - **Reconnect** — initial delay, max delay, jitter ratio, max retries (`float("inf")` ≈ forever).

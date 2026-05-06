@@ -97,6 +97,36 @@ Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 - `register(ctx)` adds the seven ClawChat tools and a skill.
 - Tool handlers accept and echo `task_id`.
 
+### `tests/test_plugin.py`
+
+Comprehensive registration / schema / behavior tests for the repo-root `__init__.py`. Defines a `_Ctx` (tools + skills + hooks) and a richer `_PlatformCtx` (adds `register_platform`). Coverage:
+
+- `test_plugin_registers_clawchat_platform_with_registry` — `register(ctx)` calls `ctx.register_platform("clawchat", ...)` with the expected label, callables (`adapter_factory`, `check_fn`, `validate_config`, `is_connected`), `required_env`, allowlist env names, and a platform hint that mentions `MEDIA:/absolute/local/path` and forbids `MEDIA:https://`.
+- `test_plugin_platform_check_only_verifies_dependencies` — the registered `check_fn` returns `True` when `_clawchat_dependencies_available` is True, **without** invoking `_clawchat_connection_configured` (separation of dependency check from credential validation).
+- `test_plugin_platform_validation_falls_back_to_home_config` — `validate_config(SimpleNamespace(extra={}))` returns `True` when the merged `$HERMES_HOME/config.yaml` supplies `websocket_url` and the `.env` supplies `CLAWCHAT_TOKEN`.
+- `test_plugin_adapter_factory_merges_home_config` — adapter factory merges `extra` from `$HERMES_HOME/config.yaml` so a sparse runtime config still produces a fully populated `ClawChatConfig`.
+- `test_plugin_registers_all_tools` — registers exactly the seven `clawchat_*` tools, all `is_async=True`.
+- `test_plugin_tool_descriptions_forbid_execute_fallbacks` — every tool description includes `"Do not use execute"`.
+- `test_upload_media_tool_description_is_link_only_not_current_chat_delivery` — `clawchat_upload_media_file` description distinguishes "shareable URL" upload vs `MEDIA:/absolute/local/path` for current-chat delivery.
+- `test_clawchat_skill_uses_plugin_tools_not_shell_commands` / `…_distinguishes_media_delivery_from_media_link_uploads` — direct text assertions on `skills/clawchat/SKILL.md` keep the skill aligned with the tool registration.
+- `test_plugin_tool_handlers_return_json_strings_for_hermes_v012` — `_handle_clawchat_get_account_profile` returns a JSON string (not a dict) because Hermes v0.12 expects strings; verifies UTF-8 round-trip.
+- `test_activate_schema_triggers_on_chinese_activation_code_phrase` — schema description and `code` parameter description both include the bilingual trigger phrasing the LLM uses to extract the code.
+- `test_plugin_upload_avatar_image_rejects_relative_path` — handler returns a `validation` error envelope for relative paths (without making any API calls).
+
+### `tests/test_plugin_manifest.py`
+
+Static check that `plugin.yaml` has `kind: platform` and `requires_env == ["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"]`. Catches manifest drift when the env-var contract changes.
+
+### `tests/test_self_echo_hook.py`
+
+Behavior of `_clawchat_pre_gateway_dispatch`:
+
+- Self-echo (CLAWCHAT platform + sender `user_id == bot_user_id`) returns `{"action": "skip", "reason": "clawchat-self-echo"}`.
+- Real user message on CLAWCHAT (different `user_id`) returns `None` (no skip).
+- Different platform (e.g., QQBOT) is left alone even when sender matches the configured CLAWCHAT bot user_id.
+- When the gateway has no configured bot user_id, the hook does not skip (defensive: would otherwise drop everything).
+- Empty / missing sender `user_id` is left alone.
+
 ### `tests/test_inbound.py`
 
 Matrix of `parse_inbound_message` edge cases:

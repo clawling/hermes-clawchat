@@ -3,14 +3,14 @@
 Install the ClawChat gateway integration into a Hermes Agent v0.12.0+ instance:
 
 ```bash
-hermes plugins install newbase-clawchat/hermes-clawchat
+hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
 ```
 
 For Docker/container deployments, set the Hermes home explicitly:
 
 ```bash
-docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install newbase-clawchat/hermes-clawchat --force'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install clawling/hermes-clawchat --force'
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
 ```
 
@@ -54,7 +54,7 @@ python -m clawchat_gateway.profile get-user <USER_ID>
 Hermes v0.12.0+ loads messaging adapters as pluggable gateway platforms. ClawChat is installed and enabled like any other Hermes plugin; it registers the `clawchat` platform through `ctx.register_platform(...)`, so no Hermes source patch is needed.
 
 ```bash
-hermes plugins install newbase-clawchat/hermes-clawchat
+hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
@@ -68,7 +68,7 @@ Activation writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME
 For Docker:
 
 ```bash
-docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install newbase-clawchat/hermes-clawchat --force'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install clawling/hermes-clawchat --force'
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes PYTHONPATH=/opt/data/plugins/clawchat/src:/opt/data/plugins/clawchat /opt/hermes/.venv/bin/python -m clawchat_gateway.activate <CODE>'
 ```

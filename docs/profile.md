@@ -105,4 +105,4 @@ Tool and CLI errors share the same shape:
 }
 ```
 
-`meta` is omitted when there is no status/path/code context. See `docs/superpowers/specs/2026-04-29-clawchat-tools-parity-design.md` for the full design rationale.
+`meta` is omitted when there is no status/path/code context. See [`tools.md`](./tools.md) for the handler-side implementation that produces these envelopes.
