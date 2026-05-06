@@ -59,7 +59,7 @@ hermes plugins enable clawchat
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 PLUGIN_DIR="$HERMES_HOME/plugins/clawchat"
-PYTHONPATH="$PLUGIN_DIR/src:$PLUGIN_DIR:${PYTHONPATH:-}" \
+PYTHONPATH="$PLUGIN_DIR:${PYTHONPATH:-}" \
 python -m clawchat_gateway.activate <CODE>
 ```
 
@@ -70,5 +70,5 @@ For Docker:
 ```bash
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install clawling/hermes-clawchat --force'
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
-docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes PYTHONPATH=/opt/data/plugins/clawchat/src:/opt/data/plugins/clawchat /opt/hermes/.venv/bin/python -m clawchat_gateway.activate <CODE>'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes PYTHONPATH=/opt/data/plugins/clawchat /opt/hermes/.venv/bin/python -m clawchat_gateway.activate <CODE>'
 ```

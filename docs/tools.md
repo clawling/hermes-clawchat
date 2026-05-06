@@ -1,4 +1,4 @@
-# Tools — `src/clawchat_gateway/tools.py`
+# Tools — `clawchat_gateway/tools.py`
 
 Single source of truth for the six account/profile/media tool handlers. Both the Hermes tool registration in the repo-root `__init__.py` (`_handle_clawchat_*`) and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
 

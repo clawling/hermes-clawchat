@@ -1,4 +1,4 @@
-# Device ID — `src/clawchat_gateway/device_id.py`
+# Device ID — `clawchat_gateway/device_id.py`
 
 Produces a stable `X-Device-Id` string for every outbound HTTP request and WebSocket handshake. Result is memoised via `functools.lru_cache(maxsize=1)`.
 

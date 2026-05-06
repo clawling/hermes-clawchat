@@ -16,7 +16,8 @@ clawchat-gateway-install = "clawchat_gateway.install:main"
 test = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-cov>=4"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["clawchat_gateway*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

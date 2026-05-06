@@ -1,6 +1,6 @@
 # Plugin Entrypoint
 
-Covers the repo-root `__init__.py`, `plugin.yaml`, and `src/clawchat_gateway/__init__.py`.
+Covers the repo-root `__init__.py`, `plugin.yaml`, and `clawchat_gateway/__init__.py`.
 
 ## `plugin.yaml`
 
@@ -37,7 +37,6 @@ The manifest declares that this is a gateway platform plugin and lists the tools
 |---|---|---|
 | `_plugin_dir` | `() -> Path` | Absolute path of this file's parent directory. |
 | `_hermes_dir` | `() -> Path` | Resolve hermes-agent dir from `HERMES_DIR` / `HERMES_AGENT_DIR`; fall back to `/opt/hermes` if `/opt/hermes/gateway` exists, else `$HERMES_HOME/hermes-agent`. |
-| `_register_python_path` | `(src: Path) -> None` | Prepend `src` to `sys.path` for the current process. Hermes invokes `register(ctx)` on every plugin load and the activate CLI sets `PYTHONPATH` itself, so no `.pth` is written into the host venv (which is root-owned in the official Docker image). |
 | `_install_gateway` | `() -> None` | Legacy fallback for Hermes builds without `ctx.register_platform`: call `clawchat_gateway.install.main(["--hermes-dir", ...])`; raise `RuntimeError` on non-zero exit. Calls `_refresh_gateway_module_cache()` afterwards. |
 | `_refresh_gateway_module_cache` | `() -> None` | After legacy patching, `importlib.invalidate_caches()` + reload `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter`. Necessary because hermes-agent may have already imported `gateway.config` (binding the pre-patch `Platform` enum) before plugin discovery; without this reload, `gateway.run` resolves `Platform.CLAWCHAT` against a stale enum. Reload failures are logged but do not raise. |
 
@@ -97,17 +96,18 @@ Without this hook, hermes-agent's interrupt-on-new-message logic treats the WebS
 
 ### `register(ctx)` — plugin entrypoint
 
-Order of operations:
+Module-level setup (runs once when Hermes imports the plugin): the repo root is prepended to `sys.path` so absolute imports of `clawchat_gateway.*` succeed both inside the plugin process and inside the `python -m clawchat_gateway.activate` subprocess.
 
-1. `_register_python_path(_plugin_dir() / "src")`
-2. `_register_platform(ctx)` registers `clawchat` through Hermes' platform registry on v0.12.0+.
-3. If platform registration succeeds, `_configure_runtime_defaults()` seeds ClawChat defaults in `$HERMES_HOME`.
-4. If platform registration is unavailable, `_install_gateway()` applies legacy hermes-agent patches and refreshes the gateway module cache. A `RuntimeError` here is re-raised; tools/skill registration is **skipped** so hermes-agent is not left in a partially patched state.
-5. `_register_tools(ctx)` registers the seven `clawchat_*` tools.
-6. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.
-7. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
+Order of operations inside `register(ctx)`:
 
-## `src/clawchat_gateway/__init__.py`
+1. `_register_platform(ctx)` registers `clawchat` through Hermes' platform registry on v0.12.0+.
+2. If platform registration succeeds, `_configure_runtime_defaults()` seeds ClawChat defaults in `$HERMES_HOME`.
+3. If platform registration is unavailable, `_install_gateway()` applies legacy hermes-agent patches and refreshes the gateway module cache. A `RuntimeError` here is re-raised; tools/skill registration is **skipped** so hermes-agent is not left in a partially patched state.
+4. `_register_tools(ctx)` registers the seven `clawchat_*` tools.
+5. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.
+6. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.
+
+## `clawchat_gateway/__init__.py`
 
 Public package surface:
 

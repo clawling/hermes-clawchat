@@ -8,7 +8,7 @@ Always read the relevant doc before changing a feature, and update it after. Whe
 
 - `README.md`, `install.md`, `.e2e/dev_install.md` — install/quick-start, env vars, user-visible flows
 - `plugin.yaml` — manifest (`requires_env`, `provides_tools`, `provides_hooks`); must match what `register(ctx)` actually registers
-- `docs/` per-module references — index at `docs/README.md`; one doc per `src/clawchat_gateway/*.py` module, plus `docs/architecture.md` (boot sequence, data flow, design choices, env vars) and `docs/clawchat-protocol.md` (wire-protocol spec; `docs/protocol.md` is the Python builder API)
+- `docs/` per-module references — index at `docs/README.md`; one doc per `clawchat_gateway/*.py` module, plus `docs/architecture.md` (boot sequence, data flow, design choices, env vars) and `docs/clawchat-protocol.md` (wire-protocol spec; `docs/protocol.md` is the Python builder API)
 - `skills/clawchat/SKILL.md` — activation/profile/avatar flows surfaced to the LLM (must stay consistent with the tool `description` fields in `__init__.py`)
 - This `CLAUDE.md` — only the orientation, command quick-reference, and env-var summary below; deep-dive material lives in `docs/`
 
@@ -18,7 +18,7 @@ Code and docs must not drift.
 
 A **Hermes Agent plugin** that integrates the ClawChat messaging platform. It is an **installable plugin made for hermes-agent and will not be merged into the original hermes-agent project** — it is loaded at runtime by hermes-agent. On Hermes v0.12.0+ it registers the `clawchat` gateway platform via `ctx.register_platform(...)`; the legacy anchor-patch installer in `install.py` is only a fallback for older Hermes builds without the platform registry API.
 
-The root `__init__.py` is the plugin entrypoint; `plugin.yaml` is the manifest; `src/clawchat_gateway/` is the gateway adapter package (also pip-installable as `clawchat-gateway`).
+The root `__init__.py` is the plugin entrypoint; `plugin.yaml` is the manifest; `clawchat_gateway/` is the gateway adapter package (also pip-installable as `clawchat-gateway`).
 
 The source code of hermes-agent is available locally at `tmp/hermes-agent/` — refer to its code and changelog (`RELEASE_v0.*.md`) when you need to understand host APIs, the platform registry contract, or behavior changes across Hermes versions.
 
@@ -34,7 +34,7 @@ All runtime CLIs must use the **Hermes Python venv**, not the system Python, bec
 
 ## Testing
 
-`tests/conftest.py` inserts `src/` onto `sys.path` and `tests/fake_hermes.py` injects stub modules for `gateway`, `gateway.config`, `gateway.platforms`, and `gateway.platforms.base` so the adapter can be imported without a real hermes-agent checkout. When adding imports from `gateway.*` in production code, extend `fake_hermes.py` or the test will fail at import time. Pytest runs in `asyncio_mode = "auto"`. Full reference: `docs/tests.md`.
+`tests/conftest.py` inserts the repo root onto `sys.path` and `tests/fake_hermes.py` injects stub modules for `gateway`, `gateway.config`, `gateway.platforms`, and `gateway.platforms.base` so the adapter can be imported without a real hermes-agent checkout. When adding imports from `gateway.*` in production code, extend `fake_hermes.py` or the test will fail at import time. Pytest runs in `asyncio_mode = "auto"`. Full reference: `docs/tests.md`.
 
 For real-environment testing — exercising the plugin against a live ClawChat backend and the actual `nousresearch/hermes-agent` Docker image, or reproducing a runtime bug that the unit tests can't reach — use the harness under `.e2e/`. See `.e2e/docs/testing.md` for the full setup and run procedure (driver: `.e2e/local_start_test.sh`, baseline data dir: `.e2e/tmp/hermes_data_base/`, install spec read by the agent: `.e2e/dev_install.md`).
 

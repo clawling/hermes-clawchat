@@ -1,4 +1,4 @@
-# Connection — `src/clawchat_gateway/connection.py`
+# Connection — `clawchat_gateway/connection.py`
 
 WebSocket lifecycle: supervisor with exponential backoff, handshake (challenge + HMAC `connect` vs. realtime subprotocol auto-accept), send queue, and read dispatcher.
 

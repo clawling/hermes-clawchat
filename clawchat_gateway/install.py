@@ -332,7 +332,7 @@ def _state_file(hermes_dir: Path) -> Path:
 
 
 def _skill_source_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "skills" / "clawchat"
+    return Path(__file__).resolve().parents[1] / "skills" / "clawchat"
 
 
 def _skill_target_dir(hermes_dir: Path) -> Path:

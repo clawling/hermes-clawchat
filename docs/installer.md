@@ -1,4 +1,4 @@
-# Installer — `src/clawchat_gateway/install.py`
+# Installer — `clawchat_gateway/install.py`
 
 Legacy anchor-patch installer for integrating ClawChat into older hermes-agent builds. Hermes v0.12.0+ does not need this installer for platform registration: the plugin calls `ctx.register_platform(...)` directly. The non-patching helpers in this module are still used by the modern plugin path to seed streaming defaults in `config.yaml` and set `CLAWCHAT_ALLOW_ALL_USERS=true` in `$HERMES_HOME/.env`.
 

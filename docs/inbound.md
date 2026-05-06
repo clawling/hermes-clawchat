@@ -1,4 +1,4 @@
-# Inbound — `src/clawchat_gateway/inbound.py`
+# Inbound — `clawchat_gateway/inbound.py`
 
 Parses a ClawChat `message.send` frame into the `InboundMessage` shape used by the adapter.
 

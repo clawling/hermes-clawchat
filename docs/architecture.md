@@ -8,11 +8,10 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 
 ## Boot sequence
 
-1. Hermes loads the repo root as a plugin and calls `register(ctx)` in `__init__.py`.
-2. `_register_python_path(src)` inserts `src/` onto `sys.path` so the in-process plugin code can import `clawchat_gateway`. The activate CLI runs as a separate process and sets `PYTHONPATH` explicitly (see `dev_install.md`), so no `.pth` shim is written into the host venv.
-3. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` falls back to `_install_gateway()` for legacy Hermes builds.
-4. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
-5. `_register_tools(ctx)` registers seven tools:
+1. Hermes loads the repo root as a plugin. Module-level code in `__init__.py` prepends the plugin root to `sys.path` so absolute imports of `clawchat_gateway.*` resolve both in this process and in the `python -m clawchat_gateway.activate` subprocess. Hermes then calls `register(ctx)`.
+2. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` falls back to `_install_gateway()` for legacy Hermes builds.
+3. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
+4. `_register_tools(ctx)` registers seven tools:
    - `clawchat_activate` — exchange an activation code for ClawChat credentials.
    - `clawchat_get_account_profile` — fetch the configured account profile.
    - `clawchat_get_user_profile` — fetch a public profile by explicit `userId`.
@@ -20,10 +19,10 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
    - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
    - `clawchat_upload_avatar_image` — upload a local avatar image and return a hosted URL.
    - `clawchat_upload_media_file` — upload a local media/file attachment and return a public URL.
-6. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard (see "Self-echo guard" below).
-7. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
+5. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard (see "Self-echo guard" below).
+6. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
 
-When the legacy fallback runs in step 4, `_refresh_gateway_module_cache()` is called immediately after `install.main(...)` returns. It calls `importlib.invalidate_caches()` and reloads `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter` — necessary because hermes-agent may have already imported `gateway.config` (binding the pre-patch `Platform` enum) before plugin discovery ran.
+When the legacy fallback runs in step 3, `_refresh_gateway_module_cache()` is called immediately after `install.main(...)` returns. It calls `importlib.invalidate_caches()` and reloads `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter` — necessary because hermes-agent may have already imported `gateway.config` (binding the pre-patch `Platform` enum) before plugin discovery ran.
 
 ## Runtime data flow
 

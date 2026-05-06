@@ -1,4 +1,4 @@
-# Protocol — `src/clawchat_gateway/protocol.py`
+# Protocol — `clawchat_gateway/protocol.py`
 
 Pure frame builders, encoding helpers, and the auth-signature helper for ClawChat Protocol v2. No I/O, no async, no shared state — every function is a pure transform from arguments to a new frame `dict` (or string / bytes).
 

@@ -1,4 +1,4 @@
-# Profile — `src/clawchat_gateway/profile.py`
+# Profile — `clawchat_gateway/profile.py`
 
 `profile.py` provides the local CLI for the ClawChat account/profile tool surface. It no longer owns profile-update logic directly; each subcommand delegates to the matching async handler in `clawchat_gateway.tools`.
 

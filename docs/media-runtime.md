@@ -1,4 +1,4 @@
-# Media Runtime — `src/clawchat_gateway/media_runtime.py`
+# Media Runtime — `clawchat_gateway/media_runtime.py`
 
 Upload outbound media to ClawChat (`/media/upload`) and download inbound media into a local cache dir. All I/O is performed in threads via `asyncio.to_thread`.
 

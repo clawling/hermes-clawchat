@@ -1,4 +1,4 @@
-# Activate — `src/clawchat_gateway/activate.py`
+# Activate — `clawchat_gateway/activate.py`
 
 Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`.
 

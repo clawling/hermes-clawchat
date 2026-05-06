@@ -27,8 +27,7 @@ hermes plugins uninstall hermes-clawchat   # only if listed
 ```bash
 rm -rf /tmp/hermes-clawchat
 git clone --depth 1 --branch joe/test https://github.com/clawling/hermes-clawchat.git /tmp/hermes-clawchat
-hermes plugins install file:///tmp/hermes-clawchat
-hermes plugins enable clawchat
+hermes plugins install file:///tmp/hermes-clawchat --enable
 ```
 
 On Hermes v0.12.0 and newer this loads ClawChat as a pluggable gateway platform. The plugin calls `ctx.register_platform(...)` at startup, so the ClawChat adapter is recognized by the gateway without patching Hermes source files. This also registers the seven `clawchat_*` tools and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
@@ -48,7 +47,7 @@ elif [ -x "$HOME/.hermes/hermes-agent/.venv/bin/python" ]; then PY="$HOME/.herme
 else PY="python3"; fi
 
 export HERMES_HOME
-export PYTHONPATH="$PLUGIN_DIR/src:$PLUGIN_DIR:${PYTHONPATH:-}"
+export PYTHONPATH="$PLUGIN_DIR:${PYTHONPATH:-}"
 
 CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 

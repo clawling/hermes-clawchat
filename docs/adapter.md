@@ -1,4 +1,4 @@
-# Adapter — `src/clawchat_gateway/adapter.py`
+# Adapter — `clawchat_gateway/adapter.py`
 
 Implements `ClawChatAdapter`, a `BasePlatformAdapter` subclass that bridges hermes-agent ↔ the ClawChat WebSocket. Hermes calls `connect`, `send`, `edit_message`, `on_run_complete`, `send_typing`, etc.; the adapter translates these into ClawChat protocol frames via `protocol.py` and hands them to `ClawChatConnection`.
 

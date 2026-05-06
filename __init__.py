@@ -16,6 +16,15 @@ def _plugin_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+# Hermes loads this plugin as ``hermes_plugins.clawchat`` and only sets up
+# its ``__path__`` for relative submodule imports. The plugin's own helpers
+# and the ``python -m clawchat_gateway.activate`` CLI both reach for the
+# package via absolute imports, so the plugin root must be on ``sys.path``.
+_PLUGIN_ROOT = str(_plugin_dir())
+if _PLUGIN_ROOT not in sys.path:
+    sys.path.insert(0, _PLUGIN_ROOT)
+
+
 def _hermes_dir() -> Path:
     for key in ("HERMES_DIR", "HERMES_AGENT_DIR"):
         value = os.environ.get(key)
@@ -24,22 +33,6 @@ def _hermes_dir() -> Path:
     if Path("/opt/hermes/gateway").is_dir():
         return Path("/opt/hermes")
     return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "hermes-agent"
-
-
-def _register_python_path(src: Path) -> None:
-    """Make ``src/`` importable in this process.
-
-    Hermes calls ``register(ctx)`` on every plugin load, so the in-process
-    ``sys.path`` injection is enough — every code path that imports
-    ``clawchat_gateway`` runs inside a Hermes process that already went
-    through this function. The activate CLI (``python -m clawchat_gateway.activate``)
-    sets ``PYTHONPATH`` explicitly in ``dev_install.md`` instead of relying
-    on a ``.pth`` shim, so we never need to write into the host venv's
-    ``site-packages`` (which is owned by root in the official Docker image).
-    """
-    src_str = str(src.resolve())
-    if src_str not in sys.path:
-        sys.path.insert(0, src_str)
 
 
 def _install_gateway() -> None:
@@ -616,8 +609,6 @@ def _register_tools(ctx) -> None:
 
 
 def register(ctx) -> None:
-    _register_python_path(_plugin_dir() / "src")
-
     if _register_platform(ctx):
         _configure_runtime_defaults()
     else:

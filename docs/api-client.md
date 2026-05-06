@@ -1,4 +1,4 @@
-# API Client — `src/clawchat_gateway/api_client.py`
+# API Client — `clawchat_gateway/api_client.py`
 
 Thin HTTP client for ClawChat REST endpoints, using `urllib.request` in a worker thread (`asyncio.to_thread`). No external HTTP library dependency.
 

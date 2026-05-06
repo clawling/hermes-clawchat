@@ -1,4 +1,4 @@
-# Stream Buffer — `src/clawchat_gateway/stream_buffer.py`
+# Stream Buffer — `clawchat_gateway/stream_buffer.py`
 
 One small helper used by the adapter to emit streaming deltas.
 

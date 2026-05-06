@@ -1,4 +1,4 @@
-# Restart — `src/clawchat_gateway/restart.py`
+# Restart — `clawchat_gateway/restart.py`
 
 Schedules a detached `hermes gateway restart` after activation so the gateway picks up freshly written `CLAWCHAT_TOKEN` / `CLAWCHAT_REFRESH_TOKEN` and any new `platforms.clawchat.extra` values without blocking the activation tool response.
 

@@ -38,7 +38,6 @@ def _load_root_plugin():
 
 def test_git_plugin_registers_tools_and_skill(monkeypatch):
     module = _load_root_plugin()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
 

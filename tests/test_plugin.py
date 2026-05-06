@@ -63,7 +63,6 @@ def _load_plugin_module():
 
 def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(
         module,
         "_install_gateway",
@@ -90,7 +89,6 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
 
 def test_plugin_platform_check_only_verifies_dependencies(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(
         module,
         "_install_gateway",
@@ -131,7 +129,6 @@ def test_plugin_platform_validation_falls_back_to_home_config(monkeypatch, tmp_p
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(
         module,
         "_install_gateway",
@@ -168,7 +165,6 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(
         module,
         "_install_gateway",
@@ -186,7 +182,6 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
 
 def test_plugin_registers_all_tools(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
 
@@ -206,7 +201,6 @@ def test_plugin_registers_all_tools(monkeypatch):
 
 def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
 
@@ -218,7 +212,6 @@ def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
 
 def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
 
@@ -272,7 +265,6 @@ def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
 
 def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
     module.register(ctx)
@@ -289,7 +281,6 @@ def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch)
 
 def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_register_python_path", lambda _src: None)
     monkeypatch.setattr(module, "_install_gateway", lambda: None)
     ctx = _Ctx()
     module.register(ctx)

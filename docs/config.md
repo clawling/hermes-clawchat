@@ -1,4 +1,4 @@
-# Config — `src/clawchat_gateway/config.py`
+# Config — `clawchat_gateway/config.py`
 
 Frozen dataclass wrapping the `extra` section of hermes-agent's `PlatformConfig` for ClawChat. Accepts snake_case and camelCase keys.
 
