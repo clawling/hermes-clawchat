@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -37,8 +38,11 @@ from clawchat_gateway.protocol import (
 from clawchat_gateway.stream_buffer import compute_delta
 
 logger = logging.getLogger("clawchat_gateway.adapter")
+inbound_trace = logging.getLogger("clawchat_gateway.inbound_trace")
 
 TYPING_REFRESH_SECONDS = 10.0
+INBOUND_RATE_WINDOW_SECONDS = 30.0
+INBOUND_RATE_WARN_THRESHOLD = 5
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
@@ -122,6 +126,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         self._active_chat_runs: dict[str, str] = {}
         self._typing_state: dict[str, tuple[bool, float]] = {}
         self._run_counter = 0
+        self._inbound_window: dict[str, deque[float]] = {}
 
     async def connect(self) -> bool:
         await self._connection.start()
@@ -176,7 +181,87 @@ class ClawChatAdapter(BasePlatformAdapter):
     async def _on_state_change(self, state: ConnectionState) -> None:
         logger.info("clawchat state -> %s", state.value)
 
+    def _trace_inbound_frame(self, frame: dict[str, Any]) -> None:
+        """Pre-parse trace for inbound message.send frames.
+
+        Why: hermes-agent has been observed to enter an interrupt-loop where
+        it treats its own outbound chunks as new user input. This emits one
+        log line per inbound frame with the fields needed to confirm/refute
+        that hypothesis (sender_id vs bot user_id, message_id, text head),
+        and warns when the per-chat rate exceeds a sane threshold.
+        """
+        chat_id = frame.get("chat_id") or ""
+        chat_type = frame.get("chat_type") or "direct"
+        sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
+        sender_id = sender.get("id") if isinstance(sender, dict) else None
+        bot_user_id = self._clawchat_config.user_id
+        is_self_echo = bool(sender_id) and sender_id == bot_user_id
+
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+        message_id = (
+            payload.get("message_id")
+            or message.get("message_id")
+            or message.get("id")
+        )
+        fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
+        frag_count = len(fragments)
+
+        text_head = ""
+        for frag in fragments:
+            if not isinstance(frag, dict):
+                continue
+            for key in ("text", "content", "value"):
+                value = frag.get(key)
+                if isinstance(value, str) and value:
+                    text_head = value
+                    break
+            if text_head:
+                break
+        if not text_head:
+            body = message.get("body")
+            if isinstance(body, str):
+                text_head = body
+            elif isinstance(body, dict):
+                for key in ("text", "content", "value"):
+                    value = body.get(key)
+                    if isinstance(value, str) and value:
+                        text_head = value
+                        break
+        text_head = text_head[:80].replace("\n", " ")
+
+        log_fn = inbound_trace.warning if is_self_echo else inbound_trace.info
+        log_fn(
+            "inbound chat_id=%s chat_type=%s sender_id=%s bot_user_id=%s "
+            "is_self_echo=%s message_id=%s trace_id=%s frag_count=%d text_head=%r",
+            chat_id,
+            chat_type,
+            sender_id,
+            bot_user_id,
+            is_self_echo,
+            message_id,
+            frame.get("trace_id"),
+            frag_count,
+            text_head,
+        )
+
+        now = time.monotonic()
+        window = self._inbound_window.setdefault(chat_id, deque())
+        window.append(now)
+        cutoff = now - INBOUND_RATE_WINDOW_SECONDS
+        while window and window[0] < cutoff:
+            window.popleft()
+        if len(window) >= INBOUND_RATE_WARN_THRESHOLD:
+            inbound_trace.warning(
+                "inbound rate spike chat_id=%s count=%d window_s=%.1f "
+                "(possible self-echo / interrupt loop)",
+                chat_id,
+                len(window),
+                INBOUND_RATE_WINDOW_SECONDS,
+            )
+
     async def _on_message(self, frame: dict[str, Any]) -> None:
+        self._trace_inbound_frame(frame)
         inbound = parse_inbound_message(frame, self._clawchat_config)
         if inbound is None:
             logger.warning(

@@ -291,10 +291,17 @@ class ClawChatConnection:
             body = message.get("body")
             body_keys = sorted(body.keys()) if isinstance(body, dict) else []
             body_len = len(body) if isinstance(body, (str, list, dict)) else 0
+            inbound_msg_id = (
+                payload.get("message_id")
+                or message.get("message_id")
+                or message.get("id")
+            )
             logger.info(
-                "clawchat ws dispatch message.send chat_id=%s sender_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                "clawchat ws dispatch message.send chat_id=%s sender_id=%s message_id=%s trace_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
                 frame.get("chat_id"),
                 (frame.get("sender") or {}).get("id") if isinstance(frame.get("sender"), dict) else None,
+                inbound_msg_id,
+                frame.get("trace_id"),
                 len(fragments),
                 sorted(payload.keys()),
                 sorted(message.keys()),

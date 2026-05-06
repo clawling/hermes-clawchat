@@ -166,6 +166,62 @@ async def _handle_clawchat_update_avatar(args, **kw):
         return _tool_error(exc)
 
 
+def _resolve_clawchat_bot_user_id(gateway) -> str | None:
+    """Look up the ClawChat bot's own user_id from the loaded gateway config.
+
+    Re-resolved on every hook call rather than cached at register time —
+    `clawchat_activate` rewrites this value live and we don't want to keep
+    a stale read from before activation.
+    """
+    try:
+        from gateway.config import Platform
+    except Exception:
+        return None
+    platforms = getattr(getattr(gateway, "config", None), "platforms", None)
+    if not isinstance(platforms, dict):
+        return None
+    platform_config = platforms.get(getattr(Platform, "CLAWCHAT", None))
+    if platform_config is None:
+        return None
+    try:
+        from clawchat_gateway.config import ClawChatConfig
+        cfg = ClawChatConfig.from_platform_config(platform_config)
+    except Exception as exc:
+        logger.debug("clawchat self-echo: ClawChatConfig load failed: %s", exc)
+        return None
+    user_id = cfg.user_id or None
+    return user_id if isinstance(user_id, str) and user_id else None
+
+
+def _clawchat_pre_gateway_dispatch(*, event, gateway, session_store=None, **_):
+    """Drop frames where the sender is the bot's own ClawChat account.
+
+    Without this, hermes-agent's interrupt-on-new-message logic treats the
+    WS-echo of the bot's own outbound chunks as fresh user input, which
+    cancels the in-flight turn and produces an "Operation interrupted:
+    waiting for model response" cascade (iteration 1/N restarts forever).
+    """
+    try:
+        from gateway.config import Platform
+    except Exception:
+        return None
+    source = getattr(event, "source", None)
+    if source is None or getattr(source, "platform", None) != getattr(Platform, "CLAWCHAT", None):
+        return None
+    sender_id = getattr(source, "user_id", None)
+    if not sender_id:
+        return None
+    bot_user_id = _resolve_clawchat_bot_user_id(gateway)
+    if bot_user_id and sender_id == bot_user_id:
+        logger.warning(
+            "clawchat pre_gateway_dispatch skip: self-echo chat_id=%s user_id=%s",
+            getattr(source, "chat_id", None),
+            sender_id,
+        )
+        return {"action": "skip", "reason": "clawchat-self-echo"}
+    return None
+
+
 def _register_tools(ctx) -> None:
     activate_schema = {
         "name": "clawchat_activate",
@@ -268,6 +324,7 @@ def register(ctx) -> None:
         raise
 
     _register_tools(ctx)
+    ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)
 
     skill = _plugin_dir() / "skills" / "clawchat" / "SKILL.md"
     if skill.exists():
