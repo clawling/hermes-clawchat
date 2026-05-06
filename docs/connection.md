@@ -98,6 +98,7 @@ Final state is `CLOSED`.
 | Method | Purpose |
 |---|---|
 | `async _read_loop(ws)` | `async for raw in ws`: decode; on malformed frame log a warning and continue; otherwise log and call `_dispatch_inbound`. |
-| `async _dispatch_inbound(frame)` | Route by `(type, event)`: `connect.challenge` → `_handle_challenge`; `res` / `hello-ok` / `hello-fail` → `_maybe_finish_handshake`; `event == "message.send"` while `READY` → `_on_message(frame)`. All other frames are logged and ignored. |
+| `async _dispatch_inbound(frame)` | Route by `(type, event)`: `connect.challenge` → `_handle_challenge`; `res` / `hello-ok` / `hello-fail` → `_maybe_finish_handshake`; `message.send`, `message.reply`, and `interaction.submit` while `READY` → `_on_message(frame)`. All other frames are logged and ignored. |
 | `async _handle_challenge(frame)` | Extract `nonce`, compute `sign = HMAC-SHA256(token, f"{client_id}|{nonce}")` via `protocol.compute_client_sign`, build a `connect` request (with `nonce` echoed into payload), record its `trace_id` as `_pending_connect_id`, send. |
+| `_connect_capabilities()` | Returns `{"protocol": "clawchat.v2"}` by default; adds `rich_fragments` and `interactive_actions` when `enable_rich_interactions` is enabled. |
 | `async _maybe_finish_handshake(frame)` | If `protocol.is_hello_ok(frame, _pending_connect_id)` is true, resolve `_hello_wait`. Otherwise log a warning. |

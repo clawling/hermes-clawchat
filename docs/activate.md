@@ -1,6 +1,6 @@
 # Activate — `src/clawchat_gateway/activate.py`
 
-Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect` and persists credentials + streaming defaults into `$HERMES_HOME/config.yaml`.
+Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`.
 
 Exposed as both a Python API (used by the `clawchat_activate` tool handler) and a CLI (`python -m clawchat_gateway.activate CODE`).
 
@@ -11,6 +11,8 @@ Exposed as both a Python API (used by the `clawchat_activate` tool handler) and 
 | `_hermes_home` | `() -> Path` | `$HERMES_HOME` or `~/.hermes`. |
 | `_load_config` | `() -> tuple[Path, dict]` | Load `~/.hermes/config.yaml`; returns `(path, {})` if missing or malformed. Does not raise. |
 | `_write_config` | `(config_path: Path, config: dict) -> None` | Serialise via `yaml.safe_dump(..., allow_unicode=False, sort_keys=False)`; creates parent dirs. |
+| `_env_path` | `() -> Path` | `$HERMES_HOME/.env`. |
+| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Upsert selected `KEY=value` lines in `.env`; preserve unrelated lines; remove keys whose value is `None`. |
 | `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
 
 ## `persist_activation`
@@ -19,18 +21,22 @@ Exposed as both a Python API (used by the `clawchat_activate` tool handler) and 
 persist_activation(*, access_token: str, user_id: str, refresh_token: str | None, base_url: str) -> dict
 ```
 
+Writes into `~/.hermes/.env`:
+
+- `CLAWCHAT_TOKEN = access_token`
+- `CLAWCHAT_REFRESH_TOKEN = refresh_token` when present, or removes any stale `CLAWCHAT_REFRESH_TOKEN` when absent.
+
 Writes into `~/.hermes/config.yaml`:
 
 - `platforms.clawchat.enabled = True`
 - `platforms.clawchat.extra`:
   - `base_url` (rstripped)
   - `websocket_url` (`_derive_websocket_url`)
-  - `token = access_token`
   - `user_id`
   - `reply_mode = "stream"`
   - `show_tools_output = False`
   - `show_think_output = False`
-  - `refresh_token` (only if provided)
+  - stale `token` / `refresh_token` keys are removed if they were written by an older version.
 - `streaming`:
   - `enabled = True`
   - defaults for `transport = "edit"`, `edit_interval = 0.25`, `buffer_threshold = 16` (via `setdefault`, so not overwritten if already set).
@@ -43,6 +49,7 @@ Returns a dict describing the result (tokens are redacted as `"***"`):
 ```python
 {
   "config_path": str,
+  "env_path": str,
   "user_id": str,
   "base_url": str,
   "websocket_url": str,

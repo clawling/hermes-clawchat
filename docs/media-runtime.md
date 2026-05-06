@@ -45,6 +45,7 @@ class DownloadedMedia:
 | `derive_base_url` | `(*, websocket_url: str, base_url: str) -> str` | Prefer `websocket_url`'s host with `ws→http`/`wss→https`. If `ws` scheme is absent, fall back to `base_url`. Raises `ValueError` if both fail. |
 | `_guess_mime` | `(filename: str, default="application/octet-stream") -> str` | `mimetypes.guess_type` wrapper. |
 | `_is_remote_url` | `(value: str) -> bool` | `True` if scheme is `http` / `https`. |
+| `normalize_outbound_media_reference` | `(value: str) -> str` | Decode Hermes `file://...` wrappers and recover embedded `http(s)://` URLs before outbound media handling. |
 | `_resolve_inbound_media_url` | `(url: str, *, base_url: str, websocket_url: str) -> str` | If already remote, return as-is. Otherwise join against `derive_base_url(...)`. |
 | `_safe_download_filename` | `(url: str, mime: str) -> str` | Use the URL path basename; else construct `f"media-{uuid4hex}{guess_extension(mime) or '.bin'}"`. |
 
@@ -96,9 +97,10 @@ Thread wrapper around `_upload_media_sync`.
 
 For each URL:
 
-1. Load from local (subject to `media_local_roots` guard) or remote.
-2. Upload via the supplied `upload_file` (default `_upload_media`).
-3. Emit a fragment dict:
+1. Normalize Hermes media references, including `file://https%3A//...` wrappers.
+2. Load from local (subject to `media_local_roots` guard) or remote.
+3. Upload via the supplied `upload_file` (default `_upload_media`).
+4. Emit a fragment dict:
 
 ```python
 {
@@ -110,4 +112,6 @@ For each URL:
 }
 ```
 
-Per-URL exceptions are swallowed (the URL is dropped from the result list). Returns `[]` when `urls` is empty.
+If a remote URL already looks like a ClawChat uploaded media URL (`/media/...`) but cannot be fetched for re-upload, the runtime preserves it as a native media fragment instead of dropping the attachment.
+
+Other per-URL exceptions are swallowed (the URL is dropped from the result list). Returns `[]` when `urls` is empty.

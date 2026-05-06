@@ -32,6 +32,7 @@ def test_build_patches_contains_expected_ids(tmp_path: Path) -> None:
         "adapter_factory",
         "auth_maps_allowed",
         "auth_maps_allow_all",
+        "env_overrides_refresh_token",
         "prompt_hints",
         "post_stream_hook",
         "normal_stream_done_hook",
@@ -41,6 +42,7 @@ def test_build_patches_contains_expected_ids(tmp_path: Path) -> None:
         "cron_platform_map",
         "startup_any_allowlist",
         "startup_allow_all",
+        "startup_allow_all_yuanbao",
         "update_allowed_platforms",
     } <= patch_ids
 
@@ -64,6 +66,20 @@ def test_apply_and_remove_patch_with_indentation(tmp_path: Path) -> None:
 
     assert remove_patch(patch) is True
     assert target.read_text() == '    QQBOT = "qqbot"\n'
+
+
+def test_env_overrides_patch_reads_refresh_token(tmp_path: Path) -> None:
+    gateway_dir = tmp_path / "gateway"
+    gateway_dir.mkdir()
+    target = gateway_dir / "config.py"
+    target.write_text("# Session settings\n")
+    patches = {patch.id: patch for patch in build_patches(tmp_path)}
+
+    assert apply_patch(patches["env_overrides"]) is True
+    assert apply_patch(patches["env_overrides_refresh_token"]) is True
+    content = target.read_text()
+    assert 'os.getenv("CLAWCHAT_REFRESH_TOKEN", "").strip()' in content
+    assert 'if clawchat_refresh_token: _ce["refresh_token"] = clawchat_refresh_token' in content
 
 
 def test_cli_platform_registry_patch_inserts_clawchat(tmp_path: Path) -> None:
@@ -108,6 +124,26 @@ def test_cron_scheduler_patches_insert_clawchat(tmp_path: Path) -> None:
     assert '"clawchat": Platform.CLAWCHAT,\n' in content
     assert patch_applied(known) is True
     assert patch_applied(pmap) is True
+
+
+def test_startup_allow_all_patch_handles_yuanbao_allow_all_anchor(tmp_path: Path) -> None:
+    target = tmp_path / "run.py"
+    target.write_text(
+        "        _allow_all = any(\n"
+        "            os.getenv(v, '').lower() in ('true', '1', 'yes')\n"
+        "            for v in (\"TELEGRAM_ALLOW_ALL_USERS\",\n"
+        "                       \"QQ_ALLOW_ALL_USERS\",\n"
+        "                       \"YUANBAO_ALLOW_ALL_USERS\")\n"
+        "        )\n"
+    )
+    patch = next(patch for patch in build_patches(tmp_path) if patch.id == "startup_allow_all_yuanbao")
+    patch.file = str(target)
+
+    assert apply_patch(patch) is True
+    content = target.read_text()
+    assert '"CLAWCHAT_ALLOW_ALL_USERS",\n' in content
+    assert content.index('"QQ_ALLOW_ALL_USERS"') < content.index('"CLAWCHAT_ALLOW_ALL_USERS"')
+    assert content.index('"CLAWCHAT_ALLOW_ALL_USERS"') < content.index('"YUANBAO_ALLOW_ALL_USERS"')
 
 
 def test_install_state_round_trip(tmp_path: Path) -> None:

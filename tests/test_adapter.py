@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from types import SimpleNamespace
 
+import clawchat_gateway.adapter as adapter_module
 from clawchat_gateway.adapter import ClawChatAdapter
 from clawchat_gateway.inbound import InboundMessage
 from clawchat_gateway.stream_buffer import compute_delta
@@ -37,6 +38,20 @@ def _make_adapter(**extra) -> ClawChatAdapter:
     )
     adapter._connection = FakeConnection()
     return adapter
+
+
+def test_adapter_accepts_dynamic_clawchat_platform(monkeypatch):
+    class DynamicPlatform:
+        def __init__(self, value):
+            if value != "clawchat":
+                raise ValueError(value)
+            self.value = value
+
+    monkeypatch.setattr(adapter_module, "Platform", DynamicPlatform)
+
+    adapter = ClawChatAdapter(SimpleNamespace(extra={"websocket_url": "ws://x", "token": "t"}))
+
+    assert adapter.platform.value == "clawchat"
 
 
 def test_compute_delta_uses_suffix_when_content_extends():
@@ -208,6 +223,49 @@ async def test_on_message_maps_reply_preview_to_message_event_fields():
     assert event.reply_to_text == "older message"
 
 
+async def test_on_message_maps_interaction_submit_approve_to_text_command():
+    adapter = _make_adapter()
+    frame = {
+        "event": "interaction.submit",
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message_id": "msg-1",
+            "fragment_index": 0,
+            "fragment_kind": "approval_request",
+            "action_id": "approve",
+            "action_payload": {"decision": "approve"},
+        },
+    }
+
+    await adapter._on_message(frame)
+
+    assert adapter.handled[0].text == "/approve"
+    assert adapter.handled[0].raw_message["clawchat_interaction_submit"] == frame["payload"]
+
+
+async def test_on_message_maps_interaction_submit_deny_to_text_command():
+    adapter = _make_adapter()
+    frame = {
+        "event": "interaction.submit",
+        "chat_id": "u1",
+        "chat_type": "direct",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message_id": "msg-1",
+            "fragment_index": 0,
+            "fragment_kind": "approval_request",
+            "action_id": "deny",
+            "action_payload": {"decision": "deny"},
+        },
+    }
+
+    await adapter._on_message(frame)
+
+    assert adapter.handled[0].text == "/deny"
+
+
 async def test_send_emits_message_reply_for_static_mode():
     adapter = _make_adapter(reply_mode="static")
 
@@ -216,7 +274,7 @@ async def test_send_emits_message_reply_for_static_mode():
     assert result.success is True
     assert adapter._connection.sent_frames[0]["event"] == "message.reply"
     assert adapter._connection.sent_frames[0]["version"] == "2"
-    assert adapter._connection.sent_frames[0]["payload"]["message_id"] == result.message_id
+    assert "message_id" not in adapter._connection.sent_frames[0]["payload"]
     assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "hi"}
     ]
@@ -269,7 +327,7 @@ async def test_send_suppresses_gateway_tool_progress_by_default():
 
 
 async def test_send_preserves_gateway_tool_progress_when_enabled():
-    adapter = _make_adapter(reply_mode="stream", show_tools_output=True)
+    adapter = _make_adapter(reply_mode="stream", show_tool_progress=True)
 
     await adapter.send(
         chat_id="u1",
@@ -280,6 +338,47 @@ async def test_send_preserves_gateway_tool_progress_when_enabled():
         "message.created",
         "message.add",
     ]
+
+
+async def test_send_suppresses_gateway_tool_progress_when_raw_tools_visible_but_progress_hidden():
+    adapter = _make_adapter(
+        reply_mode="stream",
+        show_tools_output=True,
+        show_tool_progress=False,
+    )
+
+    result = await adapter.send(
+        chat_id="u1",
+        content='🧭 browser_navigate: "https://example.com/image.png"',
+    )
+
+    assert result.success is True
+    assert adapter._connection.sent_frames == []
+
+
+async def test_send_shows_tool_progress_while_filtering_raw_tool_output():
+    adapter = _make_adapter(
+        reply_mode="stream",
+        show_tools_output=False,
+        show_tool_progress=True,
+    )
+
+    await adapter.send(
+        chat_id="u1",
+        content='🧭 browser_navigate: "https://example.com/image.png"',
+    )
+    await adapter.send(
+        chat_id="u1",
+        content='<tool_result>{"secret": true}</tool_result>visible',
+    )
+
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == [
+        "message.created",
+        "message.add",
+        "message.created",
+        "message.add",
+    ]
+    assert adapter._connection.sent_frames[3]["payload"]["fragments"][0]["text"] == "visible"
 
 
 async def test_edit_message_suppresses_gateway_tool_progress_by_default():
@@ -295,6 +394,82 @@ async def test_edit_message_suppresses_gateway_tool_progress_by_default():
 
     assert result.success is True
     assert adapter._connection.sent_frames == []
+
+
+async def test_send_emits_rich_approval_fragment_when_enabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=True)
+    fallback = "Tool wants to continue. Reply /approve to proceed or /deny to cancel."
+
+    await adapter.send(chat_id="u1", content=fallback)
+
+    fragments = adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"]
+    assert fragments == [
+        {
+            "kind": "approval_request",
+            "title": "Approval required",
+            "fallback_text": fallback,
+            "state": "pending",
+            "actions": [
+                {
+                    "id": "approve",
+                    "label": "Approve",
+                    "style": "primary",
+                    "payload": {"decision": "approve"},
+                },
+                {
+                    "id": "deny",
+                    "label": "Deny",
+                    "style": "danger",
+                    "payload": {"decision": "deny"},
+                },
+            ],
+        }
+    ]
+
+
+async def test_send_keeps_approval_text_fallback_when_rich_interactions_disabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=False)
+    fallback = "Tool wants to continue. Reply /approve to proceed or /deny to cancel."
+
+    await adapter.send(chat_id="u1", content=fallback)
+
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": fallback}
+    ]
+
+
+async def test_send_emits_metadata_action_card_when_enabled():
+    adapter = _make_adapter(reply_mode="static", enable_rich_interactions=True)
+
+    await adapter.send(
+        chat_id="u1",
+        content="Run cleanup?",
+        metadata={
+            "clawchat_interaction": {
+                "kind": "action_card",
+                "title": "Cleanup",
+                "fallback_text": "Run cleanup? Reply /approve or /deny.",
+                "state": "pending",
+                "actions": [
+                    {"id": "approve", "label": "Run", "style": "primary"},
+                    {"id": "deny", "label": "Cancel", "style": "secondary"},
+                ],
+            }
+        },
+    )
+
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
+        {
+            "kind": "action_card",
+            "title": "Cleanup",
+            "fallback_text": "Run cleanup? Reply /approve or /deny.",
+            "state": "pending",
+            "actions": [
+                {"id": "approve", "label": "Run", "style": "primary"},
+                {"id": "deny", "label": "Cancel", "style": "secondary"},
+            ],
+        }
+    ]
 
 
 async def test_send_logs_static_reply(caplog):
@@ -356,7 +531,7 @@ async def test_send_emits_message_created_then_add_for_stream_mode():
     assert adapter._connection.sent_frames[0]["version"] == "2"
     assert adapter._connection.sent_frames[0]["payload"]["message_id"] == message_id
     assert adapter._connection.sent_frames[1]["payload"]["message_id"] == message_id
-    assert adapter._connection.sent_frames[1]["payload"]["sequence"] == 1
+    assert adapter._connection.sent_frames[1]["payload"]["sequence"] == 0
     assert (
         adapter._connection.sent_frames[1]["payload"]["fragments"][0]["delta"]
         == "hello"
@@ -430,7 +605,7 @@ async def test_edit_message_emits_message_add_for_stream_mode():
     assert result.success is True
     assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.add"]
     assert adapter._connection.sent_frames[0]["payload"]["message_id"] == first.message_id
-    assert adapter._connection.sent_frames[0]["payload"]["sequence"] == 2
+    assert adapter._connection.sent_frames[0]["payload"]["sequence"] == 1
     fragment = adapter._connection.sent_frames[0]["payload"]["fragments"][0]
     assert fragment["text"] == "hello world"
     assert fragment["delta"] == " world"
@@ -483,6 +658,50 @@ async def test_edit_message_with_finalize_emits_done_and_reply():
     assert first.message_id not in adapter._active_runs_by_id
 
 
+async def test_v012_stream_edits_strip_cursor_and_finalize_lifecycle():
+    adapter = _make_adapter(reply_mode="stream")
+
+    result = await adapter.send(chat_id="u1", content="Hey! I'm ▉")
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=result.message_id or "",
+        content="Hey! I'm doing well ▉",
+    )
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=result.message_id or "",
+        content="Hey! I'm doing well",
+        finalize=True,
+    )
+
+    assert adapter.REQUIRES_EDIT_FINALIZE is True
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == [
+        "message.created",
+        "message.add",
+        "message.add",
+        "message.done",
+        "message.reply",
+    ]
+    first_add = adapter._connection.sent_frames[1]["payload"]["fragments"][0]
+    second_add = adapter._connection.sent_frames[2]["payload"]["fragments"][0]
+    done = adapter._connection.sent_frames[3]
+    reply = adapter._connection.sent_frames[4]
+    assert first_add == {"kind": "text", "text": "Hey! I'm", "delta": "Hey! I'm"}
+    assert second_add == {
+        "kind": "text",
+        "text": "Hey! I'm doing well",
+        "delta": " doing well",
+    }
+    assert done["payload"]["fragments"] == [{"kind": "text", "text": "Hey! I'm doing well"}]
+    assert reply["payload"]["message"]["body"]["fragments"] == [
+        {"kind": "text", "text": "Hey! I'm doing well"}
+    ]
+    assert all(
+        "▉" not in str(frame)
+        for frame in adapter._connection.sent_frames
+    )
+
+
 async def test_edit_message_ignores_unknown_kwargs():
     adapter = _make_adapter(reply_mode="stream")
     first = await adapter.send(chat_id="u1", content="hi")
@@ -520,6 +739,21 @@ async def test_on_run_complete_emits_message_done_without_static_reply():
     assert adapter._connection.sent_frames[2]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "hello world"}
     ]
+    assert first.message_id not in adapter._active_runs_by_id
+
+
+async def test_on_run_failed_emits_message_failed_and_cleans_run():
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hello")
+    adapter._connection.sent_frames.clear()
+
+    await adapter.on_run_failed(chat_id="u1", error="boom", message_id=first.message_id)
+
+    assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.failed"]
+    failed = adapter._connection.sent_frames[0]
+    assert failed["payload"]["message_id"] == first.message_id
+    assert failed["payload"]["sequence"] == 0
+    assert failed["payload"]["streaming"]["status"] == "failed"
     assert first.message_id not in adapter._active_runs_by_id
 
 
@@ -694,6 +928,44 @@ async def test_send_image_file_uploads_local_image(monkeypatch, tmp_path):
     assert adapter._connection.sent_frames[0]["event"] == "message.reply"
     assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "generated"},
+        {
+            "kind": "image",
+            "url": "https://cdn.example.com/reply.png",
+            "mime": "image/png",
+            "size": 9,
+            "name": "reply.png",
+        },
+    ]
+
+
+async def test_send_image_file_treats_hermes_file_wrapped_remote_url_as_remote(
+    monkeypatch,
+):
+    adapter = _make_adapter()
+    uploaded = []
+
+    async def fake_upload(urls, **kwargs):
+        uploaded.append({"urls": urls, "kwargs": kwargs})
+        return [
+            {
+                "kind": "image",
+                "url": "https://cdn.example.com/reply.png",
+                "mime": "image/png",
+                "size": 9,
+                "name": "reply.png",
+            }
+        ]
+
+    monkeypatch.setattr("clawchat_gateway.adapter.upload_outbound_media", fake_upload)
+
+    result = await adapter.send_image_file(
+        chat_id="u1",
+        image_path="file://https%3A//clawchat.example.com/media/reply.png",
+    )
+
+    assert result.success is True
+    assert uploaded[0]["urls"] == ["https://clawchat.example.com/media/reply.png"]
+    assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
         {
             "kind": "image",
             "url": "https://cdn.example.com/reply.png",

@@ -38,7 +38,8 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 ### `tests/test_activate.py`
 
-- `test_persist_activation_writes_clawchat_config` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `config.yaml` has `platforms.clawchat.enabled`, the expected `extra` keys, and streaming/display defaults.
+- `test_persist_activation_writes_secrets_to_env_and_config_without_secrets` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `.env` has the ClawChat tokens while `config.yaml` has enabled ClawChat, non-secret `extra` keys, and streaming/display defaults.
+- `test_persist_activation_removes_stale_config_secrets_and_refresh_env` — ensures a reactivation removes old YAML token fields, updates `CLAWCHAT_TOKEN`, removes stale `CLAWCHAT_REFRESH_TOKEN` when no refresh token is returned, and preserves unrelated `.env` entries.
 
 ### `tests/test_adapter.py` (~26 tests)
 
@@ -93,7 +94,7 @@ Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exer
 
 Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 
-- `register(ctx)` adds three tools and a skill.
+- `register(ctx)` adds the seven ClawChat tools and a skill.
 - Tool handlers accept and echo `task_id`.
 
 ### `tests/test_inbound.py`
@@ -109,7 +110,7 @@ Matrix of `parse_inbound_message` edge cases:
 
 ### `tests/test_install.py`
 
-- `test_build_patches_contains_expected_ids` — all 14 named patches are present.
+- `test_build_patches_contains_expected_ids` — the expected legacy patch ids are present.
 - `test_apply_and_remove_patch_with_indentation` — indentation is preserved and removal is idempotent.
 - `test_cli_platform_registry_patch_inserts_clawchat` — specific check for the CLI registry patch.
 - `test_install_state_round_trip` — state file write/read.
@@ -126,14 +127,25 @@ Matrix of `parse_inbound_message` edge cases:
 - `upload_outbound_media` — uploads local paths; skips a single failing item while proceeding with the rest.
 - `download_inbound_media` — resolves relative URLs against the WebSocket origin and writes a local file.
 
+### `tests/test_tools.py`
+
+Handler-level coverage for the six new account/media tools:
+
+- happy paths for profile fetch, user fetch, friends pagination, profile update, avatar upload, and media upload.
+- config errors for missing config, token, or user id.
+- validation errors for empty user ids, invalid pagination, empty updates, relative/missing/oversized upload paths.
+- API error mapping for `auth`, `api`, `transport`, and unexpected exceptions.
+- validation tests assert the fake client was not called.
+
 ### `tests/test_profile.py`
 
-Spins up an `api_server` fixture; covers:
+CLI and loader coverage:
 
-- `update_nickname` loads `$HERMES_HOME/config.yaml` and PATCHes `/v1/users/me` with the nickname.
-- `update_avatar` uploads via `/v1/files/upload-url` then PATCHes the profile with the returned URL.
-- `load_profile_config` raises when the token is missing.
-- `update_avatar` rejects relative local paths.
+- `load_profile_config` reads token from process env / `.env` / legacy YAML fallback and raises when token or `user_id` is missing.
+- `profile get` calls `tools.get_account_profile` and prints JSON to stdout.
+- `profile update` with no fields prints a validation error to stderr.
+- `profile upload-avatar` rejects relative local paths.
+- `profile friends --page ... --page-size ...` passes pagination to `tools.list_account_friends`.
 
 ### `tests/test_protocol.py`
 

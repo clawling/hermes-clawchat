@@ -284,7 +284,7 @@ class ClawChatConnection:
         ):
             await self._maybe_finish_handshake(frame)
             return
-        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "message.send":
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply", "interaction.submit"}:
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
             fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
@@ -297,7 +297,8 @@ class ClawChatConnection:
                 or message.get("id")
             )
             logger.info(
-                "clawchat ws dispatch message.send chat_id=%s sender_id=%s message_id=%s trace_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                "clawchat ws dispatch %s chat_id=%s sender_id=%s message_id=%s trace_id=%s fragments=%d payload_keys=%s message_keys=%s body_type=%s body_keys=%s body_len=%d",
+                frame.get("event"),
                 frame.get("chat_id"),
                 (frame.get("sender") or {}).get("id") if isinstance(frame.get("sender"), dict) else None,
                 inbound_msg_id,
@@ -332,10 +333,19 @@ class ClawChatConnection:
             client_id=CLIENT_ID,
             client_version=CLIENT_VERSION,
             sign=sign,
+            device_id=get_device_id(),
+            capabilities=self._connect_capabilities(),
         )
         connect_req["payload"]["nonce"] = nonce
         logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)
         await self._ws.send(encode_frame(connect_req))
+
+    def _connect_capabilities(self) -> dict[str, Any]:
+        capabilities: dict[str, Any] = {"protocol": "clawchat.v2"}
+        if self._cfg.enable_rich_interactions:
+            capabilities["rich_fragments"] = True
+            capabilities["interactive_actions"] = True
+        return capabilities
 
     async def _maybe_finish_handshake(self, frame: dict[str, Any]) -> None:
         if self._pending_connect_id and is_hello_ok(frame, self._pending_connect_id):
