@@ -47,7 +47,7 @@ CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 
 # `cd $PLUGIN_DIR` puts the plugin root on sys.path[0] so `python -m
 # clawchat_gateway.activate` resolves the package without an `export
-# PYTHONPATH=…` line — Hermes' built-in tirith scanner flags
+# PYTHONPATH=…` line — Hermes' built-in tirith scanner flags any
 # `export PYTHONPATH=…` as an interpreter-hijack and routes the
 # command through the approval prompt, which auto-denies after 60s
 # in non-interactive sessions. The activate CLI writes CLAWCHAT_TOKEN
@@ -61,7 +61,7 @@ cd "$PLUGIN_DIR"
 echo "clawchat: activation + restart dispatched"
 ```
 
-When this block exits 0, the install is done. If the activate CLI exits non-zero, `set -e` aborts the block before the success echo runs — surface the captured stderr to the user and ask for a fresh code instead of retrying. On Hermes v0.12.0+, the enabled plugin registers the ClawChat adapter through Hermes `ctx.register_platform(...)`; do **not** run `python -m clawchat_gateway.install --hermes-dir ...` on Hermes versions that support plugin platform registration. That patch installer is only a legacy fallback for older Hermes builds without pluggable gateway platforms.
+When this block exits 0 with `clawchat: activation + restart dispatched` printed, the install is done. If the block exits non-zero (the `set -e` line will catch any failure from the activate CLI), report the captured stderr to the user and ask them for a fresh code — do not retry on the same code. On Hermes v0.12.0+, the enabled plugin registers the ClawChat adapter through Hermes `ctx.register_platform(...)`; do **not** run `python -m clawchat_gateway.install --hermes-dir ...` on Hermes versions that support plugin platform registration. That patch installer is only a legacy fallback for older Hermes builds without pluggable gateway platforms.
 
 The `clawchat_gateway.activate` CLI dispatches a detached `sh -lc 'sleep 2; hermes gateway restart'` after writing `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN`, so the gateway restart happens in the background without any further action — you do **not** need to ask the user (or anyone) to run `hermes gateway restart` manually.
 
