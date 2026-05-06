@@ -15,6 +15,7 @@ DEFAULT_BASE_URL = "http://company.newbaselab.com:10086"
 DEFAULT_WEBSOCKET_URL = "ws://company.newbaselab.com:10086/ws"
 AGENTS_CONNECT_PLATFORM = "hermes"
 AGENTS_CONNECT_TYPE = "clawbot"
+DEFAULT_REQUEST_TIMEOUT = 30.0
 
 
 @dataclass(frozen=True)
@@ -183,7 +184,7 @@ class ClawChatApiClient:
             headers=self._headers(extra_headers, body),
         )
         try:
-            with urlopen(request) as response:
+            with urlopen(request, timeout=DEFAULT_REQUEST_TIMEOUT) as response:
                 status = getattr(response, "status", 200)
                 raw = response.read().decode("utf-8")
         except Exception as exc:

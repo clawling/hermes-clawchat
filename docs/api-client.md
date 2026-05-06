@@ -10,6 +10,7 @@ Thin HTTP client for ClawChat REST endpoints, using `urllib.request` in a worker
 | `DEFAULT_WEBSOCKET_URL` | `"ws://company.newbaselab.com:10086/ws"` |
 | `AGENTS_CONNECT_PLATFORM` | `"hermes"` |
 | `AGENTS_CONNECT_TYPE` | `"clawbot"` |
+| `DEFAULT_REQUEST_TIMEOUT` | `30.0` (seconds; passed to `urlopen` for every request) |
 
 ## Exceptions
 
@@ -72,7 +73,7 @@ ClawChatApiClient(*, base_url: str, token: str = "", user_id: str = "", device_i
 |---|---|
 | `async _upload(path, *, buffer, filename, mime) -> UploadResult` | Build a `multipart/form-data` body with a single `file` field; POST; validate response has `url` and `mime` strings; coerce `size` to int (default to `len(buffer)`). |
 | `async _call_json(method, path, *, body=None, extra_headers=None) -> dict` | Offload `_call_json_sync` to a thread. |
-| `_call_json_sync(method, path, body, extra_headers) -> dict` | Build a `Request`, call `urlopen`, decode JSON, enforce envelope `{code: 0, data: <dict>}`. Raises `ClawChatApiError` on transport / non-zero code / missing `data`. For HTTP 401/403 the kind is `"auth"`. |
+| `_call_json_sync(method, path, body, extra_headers) -> dict` | Build a `Request`, call `urlopen` with `timeout=DEFAULT_REQUEST_TIMEOUT`, decode JSON, enforce envelope `{code: 0, data: <dict>}`. Raises `ClawChatApiError` on transport / non-zero code / missing `data`. For HTTP 401/403 the kind is `"auth"`. The 30s timeout exists so a stalled backend fails fast — without it the activate flow could hang the entire chat-tool turn waiting on a half-open TCP connection, blowing past the terminal-tool's 60s approval timeout in non-interactive sessions. The 30s ceiling is also large enough to tolerate typical 20 MB media uploads on a >10 Mbps link. |
 | `_headers(extra_headers, body) -> dict` | Always emits `authorization: Bearer <token>` and `x-device-id`. Adds `content-length` if `body` is present. Extra headers override defaults. |
 
 ### Response envelope contract
