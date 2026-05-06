@@ -22,13 +22,9 @@ hermes plugins uninstall hermes-clawchat   # only if listed
 
 ## 3. Install and enable the plugin from the staged source
 
-The harness bind-mounts the host's current working tree of `hermes-clawchat` (tracked + untracked files, gitignore-respected) at `/tmp/hermes-clawchat`, so we install Hermes against that local checkout — no clone, no branch flag.
-
 ```bash
 hermes plugins install file:///tmp/hermes-clawchat --enable
 ```
-
-On Hermes v0.12.0 and newer this loads ClawChat as a pluggable gateway platform. The plugin calls `ctx.register_platform(...)` at startup, so the ClawChat adapter is recognized by the gateway without patching Hermes source files. This also registers the seven `clawchat_*` tools and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
 
 ## 4. Activate and dispatch the restart — one terminal call, then stop
 

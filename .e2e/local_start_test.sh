@@ -69,6 +69,14 @@ rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
 ( cd "$REPO_ROOT" && git ls-files -co --exclude-standard | tar -cf - -T - ) | tar -xf - -C "$STAGE_DIR"
 
+# `hermes plugins install` git-clones the identifier, so the stage dir must
+# be a real repo. Seed a single-commit history with stub identity so the
+# in-container `hermes plugins install file:///tmp/hermes-clawchat` succeeds.
+( cd "$STAGE_DIR" && \
+    git -c init.defaultBranch=main init -q && \
+    git -c user.email=hermes@local -c user.name=Hermes add -A && \
+    git -c user.email=hermes@local -c user.name=Hermes commit -q -m "e2e stage" )
+
 docker run -it --rm \
     -v ./.e2e/tmp/hermes_data:/opt/data \
     -v ./.e2e/dev_install.md:/opt/dev_install.md:ro \
