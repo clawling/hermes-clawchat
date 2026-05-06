@@ -9,7 +9,7 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 ## Boot sequence
 
 1. Hermes loads the repo root as a plugin and calls `register(ctx)` in `__init__.py`.
-2. `_register_python_path(src)` inserts `src/` onto `sys.path` and drops a `clawchat_gateway_src.pth` file in a writable site-packages dir so subprocess Pythons also find the package.
+2. `_register_python_path(src)` inserts `src/` onto `sys.path` so the in-process plugin code can import `clawchat_gateway`. The activate CLI runs as a separate process and sets `PYTHONPATH` explicitly (see `dev_install.md`), so no `.pth` shim is written into the host venv.
 3. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` falls back to `_install_gateway()` for legacy Hermes builds.
 4. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
 5. `_register_tools(ctx)` registers seven tools:

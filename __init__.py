@@ -4,7 +4,6 @@ import importlib
 import json
 import logging
 import os
-import site
 import sys
 from copy import copy
 from pathlib import Path
@@ -28,34 +27,19 @@ def _hermes_dir() -> Path:
 
 
 def _register_python_path(src: Path) -> None:
+    """Make ``src/`` importable in this process.
+
+    Hermes calls ``register(ctx)`` on every plugin load, so the in-process
+    ``sys.path`` injection is enough — every code path that imports
+    ``clawchat_gateway`` runs inside a Hermes process that already went
+    through this function. The activate CLI (``python -m clawchat_gateway.activate``)
+    sets ``PYTHONPATH`` explicitly in ``dev_install.md`` instead of relying
+    on a ``.pth`` shim, so we never need to write into the host venv's
+    ``site-packages`` (which is owned by root in the official Docker image).
+    """
     src_str = str(src.resolve())
     if src_str not in sys.path:
         sys.path.insert(0, src_str)
-
-    candidates: list[str] = []
-    try:
-        candidates.extend(site.getsitepackages())
-    except Exception:
-        pass
-    try:
-        candidates.append(site.getusersitepackages())
-    except Exception:
-        pass
-
-    for raw in candidates:
-        path = Path(raw)
-        if not path.exists():
-            continue
-        pth = path / "clawchat_gateway_src.pth"
-        pth.write_text(
-            "import sys; p = "
-            + repr(src_str)
-            + "; sys.path.remove(p) if p in sys.path else None; sys.path.insert(0, p)\n",
-            encoding="utf-8",
-        )
-        logger.info("ClawChat registered Python path: %s -> %s", pth, src)
-        return
-    raise RuntimeError("no writable site-packages directory found")
 
 
 def _install_gateway() -> None:

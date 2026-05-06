@@ -37,7 +37,7 @@ The manifest declares that this is a gateway platform plugin and lists the tools
 |---|---|---|
 | `_plugin_dir` | `() -> Path` | Absolute path of this file's parent directory. |
 | `_hermes_dir` | `() -> Path` | Resolve hermes-agent dir from `HERMES_DIR` / `HERMES_AGENT_DIR`; fall back to `/opt/hermes` if `/opt/hermes/gateway` exists, else `$HERMES_HOME/hermes-agent`. |
-| `_register_python_path` | `(src: Path) -> None` | Prepend `src` to `sys.path` **and** write `clawchat_gateway_src.pth` into the first writable site-packages so child Pythons also import the package. Raises `RuntimeError` if no writable dir is found. |
+| `_register_python_path` | `(src: Path) -> None` | Prepend `src` to `sys.path` for the current process. Hermes invokes `register(ctx)` on every plugin load and the activate CLI sets `PYTHONPATH` itself, so no `.pth` is written into the host venv (which is root-owned in the official Docker image). |
 | `_install_gateway` | `() -> None` | Legacy fallback for Hermes builds without `ctx.register_platform`: call `clawchat_gateway.install.main(["--hermes-dir", ...])`; raise `RuntimeError` on non-zero exit. Calls `_refresh_gateway_module_cache()` afterwards. |
 | `_refresh_gateway_module_cache` | `() -> None` | After legacy patching, `importlib.invalidate_caches()` + reload `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter`. Necessary because hermes-agent may have already imported `gateway.config` (binding the pre-patch `Platform` enum) before plugin discovery; without this reload, `gateway.run` resolves `Platform.CLAWCHAT` against a stale enum. Reload failures are logged but do not raise. |
 
