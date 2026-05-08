@@ -12,3 +12,4 @@ tmp
 .e2e/.env
 .e2e/tmp/
 docs/superpowers/
+scripts/.env.r2
