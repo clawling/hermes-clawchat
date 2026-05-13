@@ -65,7 +65,8 @@ Uses a local `BaseHTTPRequestHandler` fixture (`api_server`) to verify:
 ### `tests/test_config.py`
 
 - `test_config_defaults` — `ClawChatConfig.from_platform_config` with an empty extra falls back to every documented default.
-- `test_config_accepts_nested_openclaw_names` — verifies both snake_case and camelCase alias lookups.
+- `test_config_reads_snake_case_hermes_extra_keys` — verifies Hermes `platforms.clawchat.extra` snake_case keys populate every config field.
+- `test_config_ignores_openclaw_camel_case_extra_keys` — verifies OpenClaw-style camelCase keys are ignored by Hermes config loading.
 
 ### `tests/test_connection.py`
 

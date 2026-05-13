@@ -44,39 +44,37 @@ def test_config_defaults():
     assert cfg.enable_rich_interactions is False
 
 
-def test_config_accepts_nested_openclaw_names():
+def test_config_reads_snake_case_hermes_extra_keys():
     cfg = ClawChatConfig.from_platform_config(
         type(
             "PC",
             (),
             {
                 "extra": {
-                    "websocketUrl": "wss://chat.example/ws",
-                    "baseUrl": "https://api.example",
+                    "websocket_url": "wss://chat.example/ws",
+                    "base_url": "https://api.example",
                     "token": "tok",
-                    "refreshToken": "rt",
-                    "userId": "u1",
-                    "replyMode": "stream",
-                    "groupMode": "all",
-                    "reconnectInitialDelayMs": 111,
+                    "refresh_token": "rt",
+                    "user_id": "u1",
+                    "reply_mode": "stream",
+                    "group_mode": "all",
+                    "reconnect_initial_delay_ms": 111,
                     "reconnect_max_delay_ms": 222,
-                    "reconnectJitterRatio": 0.12,
+                    "reconnect_jitter_ratio": 0.12,
                     "reconnect_max_retries": 7,
-                    "heartbeatIntervalMs": 333,
+                    "heartbeat_interval_ms": 333,
                     "heartbeat_timeout_ms": 444,
-                    "ackTimeoutMs": 555,
+                    "ack_timeout_ms": 555,
                     "ack_auto_resend_on_timeout": True,
-                    "mediaLocalRoots": ["/tmp/a", "/tmp/b"],
-                    "showToolsOutput": True,
-                    "showToolProgress": False,
+                    "media_local_roots": ["/tmp/a", "/tmp/b"],
+                    "show_tools_output": True,
+                    "show_tool_progress": False,
                     "show_think_output": True,
-                    "enableRichInteractions": True,
+                    "enable_rich_interactions": True,
                     "stream": {
-                        "flushIntervalMs": 100,
+                        "flush_interval_ms": 100,
                         "min_chunk_chars": 8,
-                        "minChunkChars": 8,
                         "max_buffer_chars": 512,
-                        "maxBufferChars": 512,
                     },
                 }
             },
@@ -105,6 +103,70 @@ def test_config_accepts_nested_openclaw_names():
     assert cfg.stream_flush_interval_ms == 100
     assert cfg.stream_min_chunk_chars == 8
     assert cfg.stream_max_buffer_chars == 512
+
+
+def test_config_ignores_openclaw_camel_case_extra_keys():
+    cfg = ClawChatConfig.from_platform_config(
+        type(
+            "PC",
+            (),
+            {
+                "extra": {
+                    "websocketUrl": "wss://chat.example/ws",
+                    "baseUrl": "https://api.example",
+                    "token": "tok",
+                    "refreshToken": "rt",
+                    "userId": "u1",
+                    "replyMode": "static",
+                    "groupMode": "all",
+                    "reconnectInitialDelayMs": 111,
+                    "reconnectMaxDelayMs": 222,
+                    "reconnectJitterRatio": 0.12,
+                    "reconnectMaxRetries": 7,
+                    "heartbeatIntervalMs": 333,
+                    "heartbeatTimeoutMs": 444,
+                    "ackTimeoutMs": 555,
+                    "ackAutoResendOnTimeout": True,
+                    "mediaLocalRoots": ["/tmp/a", "/tmp/b"],
+                    "mediaDownloadDir": "/tmp/custom-media",
+                    "showToolsOutput": True,
+                    "showToolProgress": True,
+                    "showThinkOutput": True,
+                    "enableRichInteractions": True,
+                    "stream": {
+                        "flushIntervalMs": 100,
+                        "minChunkChars": 8,
+                        "maxBufferChars": 512,
+                    },
+                }
+            },
+        )()
+    )
+
+    assert cfg.websocket_url == ""
+    assert cfg.base_url == ""
+    assert cfg.token == "tok"
+    assert cfg.refresh_token == ""
+    assert cfg.user_id == ""
+    assert cfg.reply_mode == "stream"
+    assert cfg.group_mode == "mention"
+    assert cfg.reconnect_initial_delay_ms == 500
+    assert cfg.reconnect_max_delay_ms == 15000
+    assert cfg.reconnect_jitter_ratio == 0.3
+    assert cfg.reconnect_max_retries == float("inf")
+    assert cfg.heartbeat_interval_ms == 20000
+    assert cfg.heartbeat_timeout_ms == 10000
+    assert cfg.ack_timeout_ms == 15000
+    assert cfg.ack_auto_resend_on_timeout is False
+    assert cfg.media_local_roots == ()
+    assert cfg.media_download_dir == "/tmp/clawchat-media"
+    assert cfg.show_tools_output is False
+    assert cfg.show_tool_progress is False
+    assert cfg.show_think_output is False
+    assert cfg.enable_rich_interactions is False
+    assert cfg.stream_flush_interval_ms == 250
+    assert cfg.stream_min_chunk_chars == 40
+    assert cfg.stream_max_buffer_chars == 2000
 
 
 def test_config_reads_connection_credentials_from_env(monkeypatch):
