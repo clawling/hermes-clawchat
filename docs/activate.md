@@ -1,6 +1,6 @@
 # Activate — `clawchat_gateway/activate.py`
 
-Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`.
+Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`. When running inside Hermes, persistence goes through `hermes_cli.config` helpers (`read_raw_config`, `save_config`, `save_env_value`, `remove_env_value`) so Hermes owns atomic writes, permissions, managed-mode handling, and env-cache invalidation. The module keeps direct file I/O only as a fallback for tests or standalone installs where `hermes_cli` is not importable.
 
 Exposed as both a Python API (used by the `clawchat_activate` tool handler) and a CLI (`python -m clawchat_gateway.activate CODE`).
 
@@ -8,12 +8,13 @@ Exposed as both a Python API (used by the `clawchat_activate` tool handler) and 
 
 | Function | Signature | Purpose |
 |---|---|---|
+| `_hermes_config_api` | `() -> dict[str, Callable] \| None` | Detect `hermes_cli.config` write helpers. Returns `None` outside Hermes. |
 | `_hermes_home` | `() -> Path` | `$HERMES_HOME` or `~/.hermes`. |
-| `_load_config` | `() -> tuple[Path, dict]` | Load `~/.hermes/config.yaml`; returns `(path, {})` if missing or malformed. Does not raise. |
-| `_write_config` | `(config_path: Path, config: dict) -> None` | Serialise via `yaml.safe_dump(..., allow_unicode=False, sort_keys=False)`; creates parent dirs. |
-| `_env_path` | `() -> Path` | `$HERMES_HOME/.env`. |
+| `_load_config` | `() -> tuple[Path, dict]` | Prefer `hermes_cli.config.get_config_path()` + `read_raw_config()`; fallback loads `$HERMES_HOME/config.yaml`; returns `(path, {})` if missing or malformed. Does not raise. |
+| `_write_config` | `(config_path: Path, config: dict) -> None` | Prefer `hermes_cli.config.save_config(config)`; fallback serialises via `yaml.safe_dump(..., allow_unicode=False, sort_keys=False)` and creates parent dirs. |
+| `_env_path` | `() -> Path` | Prefer `hermes_cli.config.get_env_path()`; fallback returns `$HERMES_HOME/.env`. |
 | `_validate_env_value` | `(key: str, value: str) -> str` | Reject `\n` / `\r` in `.env` values to keep the line-based format intact. Raises `ValueError` when invalid; returns `value` otherwise. |
-| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Upsert selected `KEY=value` lines in `.env`; preserve unrelated lines; remove keys whose value is `None`. Each non-`None` value goes through `_validate_env_value`. |
+| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Prefer `hermes_cli.config.save_env_value` / `remove_env_value`; fallback upserts selected `KEY=value` lines in `.env`, preserves unrelated lines, and removes keys whose value is `None`. Each fallback non-`None` value goes through `_validate_env_value`. |
 | `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
 
 ## `persist_activation`
@@ -26,6 +27,7 @@ Writes into `~/.hermes/.env`:
 
 - `CLAWCHAT_TOKEN = access_token`
 - `CLAWCHAT_REFRESH_TOKEN = refresh_token` when present, or removes any stale `CLAWCHAT_REFRESH_TOKEN` when absent.
+- Uses `hermes_cli.config.save_env_value` / `remove_env_value` when available.
 
 Writes into `~/.hermes/config.yaml`:
 
@@ -44,6 +46,7 @@ Writes into `~/.hermes/config.yaml`:
 - `display.platforms.clawchat`:
   - `tool_progress = "off"`
   - `show_reasoning = False`
+- Uses `hermes_cli.config.read_raw_config` / `save_config` when available, so only the user's raw config is mutated rather than dumping Hermes defaults.
 
 Returns a dict describing the result (tokens are redacted as `"***"`):
 

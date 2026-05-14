@@ -40,6 +40,7 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 - `test_persist_activation_writes_secrets_to_env_and_config_without_secrets` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `.env` has the ClawChat tokens while `config.yaml` has enabled ClawChat, non-secret `extra` keys, and streaming/display defaults.
 - `test_persist_activation_removes_stale_config_secrets_and_refresh_env` — ensures a reactivation removes old YAML token fields, updates `CLAWCHAT_TOKEN`, removes stale `CLAWCHAT_REFRESH_TOKEN` when no refresh token is returned, and preserves unrelated `.env` entries.
+- `test_persist_activation_uses_hermes_config_helpers_when_available` — injects a fake `hermes_cli.config` module and verifies activation persistence delegates to Hermes' `save_env_value`, `remove_env_value`, and `save_config` helpers when they are importable.
 
 ### `tests/test_group_context.py`
 

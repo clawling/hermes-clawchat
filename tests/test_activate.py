@@ -1,3 +1,5 @@
+import sys
+import types
 from pathlib import Path
 
 import yaml
@@ -86,3 +88,49 @@ def test_persist_activation_removes_stale_config_secrets_and_refresh_env(
     assert "refresh_token" not in extra
     assert extra["user_id"] == "agent-2"
     assert extra["websocket_url"] == "wss://chat.example/v1/ws"
+
+
+def test_persist_activation_uses_hermes_config_helpers_when_available(
+    tmp_path: Path, monkeypatch
+) -> None:
+    hermes_home = tmp_path / ".hermes"
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    saved_env: dict[str, str] = {}
+    removed_env: list[str] = []
+    saved_configs: list[dict] = []
+    config_module = types.ModuleType("hermes_cli.config")
+    config_module.get_config_path = lambda: hermes_home / "config.yaml"
+    config_module.get_env_path = lambda: hermes_home / ".env"
+    config_module.read_raw_config = lambda: {
+        "platforms": {
+            "clawchat": {
+                "enabled": True,
+                "extra": {
+                    "token": "old-yaml",
+                    "refresh_token": "old-refresh",
+                },
+            }
+        }
+    }
+    config_module.save_config = lambda config: saved_configs.append(config)
+    config_module.save_env_value = lambda key, value: saved_env.__setitem__(key, value)
+    config_module.remove_env_value = lambda key: removed_env.append(key) or True
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config_module)
+    monkeypatch.setitem(sys.modules, "hermes_cli", types.ModuleType("hermes_cli"))
+
+    result = persist_activation(
+        access_token="new-token",
+        refresh_token=None,
+        user_id="agent-3",
+        base_url="https://chat.example",
+    )
+
+    assert saved_env == {"CLAWCHAT_TOKEN": "new-token"}
+    assert removed_env == ["CLAWCHAT_REFRESH_TOKEN"]
+    assert len(saved_configs) == 1
+    extra = saved_configs[0]["platforms"]["clawchat"]["extra"]
+    assert "token" not in extra
+    assert "refresh_token" not in extra
+    assert extra["user_id"] == "agent-3"
+    assert result["config_path"] == str(hermes_home / "config.yaml")
+    assert result["env_path"] == str(hermes_home / ".env")

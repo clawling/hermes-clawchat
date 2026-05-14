@@ -4,12 +4,34 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 import yaml
 
 from clawchat_gateway.api_client import DEFAULT_BASE_URL, DEFAULT_WEBSOCKET_URL, ClawChatApiClient
+
+
+def _hermes_config_api() -> dict[str, Callable[..., Any]] | None:
+    try:
+        from hermes_cli.config import (
+            get_config_path,
+            get_env_path,
+            read_raw_config,
+            remove_env_value,
+            save_config,
+            save_env_value,
+        )
+    except Exception:
+        return None
+    return {
+        "get_config_path": get_config_path,
+        "get_env_path": get_env_path,
+        "read_raw_config": read_raw_config,
+        "remove_env_value": remove_env_value,
+        "save_config": save_config,
+        "save_env_value": save_env_value,
+    }
 
 
 def _hermes_home() -> Path:
@@ -19,6 +41,15 @@ def _hermes_home() -> Path:
 
 
 def _load_config() -> tuple[Path, dict[str, Any]]:
+    api = _hermes_config_api()
+    if api is not None:
+        config_path = Path(api["get_config_path"]())
+        try:
+            config = api["read_raw_config"]() or {}
+        except Exception:
+            config = {}
+        return config_path, config
+
     config_path = _hermes_home() / "config.yaml"
     if not config_path.exists():
         return config_path, {}
@@ -29,6 +60,11 @@ def _load_config() -> tuple[Path, dict[str, Any]]:
 
 
 def _write_config(config_path: Path, config: dict[str, Any]) -> None:
+    api = _hermes_config_api()
+    if api is not None:
+        api["save_config"](config)
+        return
+
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(config, allow_unicode=False, sort_keys=False),
@@ -37,6 +73,9 @@ def _write_config(config_path: Path, config: dict[str, Any]) -> None:
 
 
 def _env_path() -> Path:
+    api = _hermes_config_api()
+    if api is not None:
+        return Path(api["get_env_path"]())
     return _hermes_home() / ".env"
 
 
@@ -47,6 +86,15 @@ def _validate_env_value(key: str, value: str) -> str:
 
 
 def _write_env_values(values: dict[str, str | None]) -> Path:
+    api = _hermes_config_api()
+    if api is not None:
+        for key, value in values.items():
+            if value is None:
+                api["remove_env_value"](key)
+            else:
+                api["save_env_value"](key, str(value))
+        return Path(api["get_env_path"]())
+
     path = _env_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
