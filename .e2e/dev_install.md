@@ -40,17 +40,10 @@ hermes clawchat activate CLAWCHAT_CODE_GOES_HERE
 
 Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message. The code is one-time-use. If the command is not recognized, report that this Hermes build did not expose the native ClawChat CLI command. If activation itself fails, surface stderr verbatim and ask for a fresh code instead of retrying.
 
-`hermes clawchat activate CODE` writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env`, writes non-secret ClawChat platform config to `config.yaml`, and schedules the required gateway reload in the background so the enabled platform registration and new credentials are picked up. When it exits 0 with:
+`hermes clawchat activate CODE` writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and writes non-secret ClawChat platform config to `config.yaml`. When it exits 0 with:
 
 ```text
 clawchat: activation complete for <user_id>
-clawchat: Hermes restart scheduled in 2s
 ```
 
-the install is done. Reply once: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds."
-
-**Do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
-
-**Do not** run `hermes gateway restart` yourself from inside this chat session — it does not return within the chat tool's 60-second cap, and the activation command has already scheduled it.
-
-Reply once — and only when the activation command exited 0: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds." On non-zero exit, reply with stderr verbatim instead. That is your final message — stop calling tools.
+the install is done. Reply once: "ClawChat is activated." On non-zero exit, reply with stderr verbatim instead.

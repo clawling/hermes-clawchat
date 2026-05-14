@@ -69,7 +69,7 @@ For non-interactive installs, use the plugin CLI command registered by Hermes:
 hermes clawchat activate <CODE>
 ```
 
-That command writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env`, stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`, and schedules `hermes gateway restart` so the gateway reloads the enabled platform and credentials.
+That command writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`.
 
 Group chats default to `group_mode: all`, so every inbound group message is eligible for a reply. Set `CLAWCHAT_GROUP_MODE=mention` or `platforms.clawchat.extra.group_mode: mention` to require an @mention. Group-only covenant guidance is injected through Hermes' per-event `channel_prompt`; direct chats do not receive that group covenant.
 
