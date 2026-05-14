@@ -540,6 +540,18 @@ the device cursor only after `WriteMessage` succeeds for that envelope. If
 the connection closes before a write succeeds, the same envelope remains
 eligible for replay on the next session.
 
+## Client Send Ack
+
+`message.ack` is a send-result control event for materialized
+`message.send` and `message.reply` only. Clients may wait for it after the
+frame has actually been written to the WebSocket. Ack timeout is local to
+the send call: it rejects that call, does not reconnect, and does not
+automatically resend by default.
+
+Streaming lifecycle events (`message.created`, `message.add`,
+`message.done`, `message.failed`) and `typing.update` are fire-and-forget
+from the client's perspective and do not create pending ack entries.
+
 Replay and live delivery share one ordered stream per device. While replay
 is catching up, newer messages MUST NOT bypass older missed messages for the
 same `user_id + device_id`; they remain in the durable inbox and are sent
@@ -644,5 +656,6 @@ same materialized envelope for missed completed streams.
 - Missed completed streams should be replayed as a single `message.reply` with the full merged fragments instead of replaying `message.created`, `message.add`, or `message.done` individually.
 - Servers replay missed messages as normal downlink envelopes after the WebSocket session opens and MUST NOT require receiver-side ack frames.
 - Device replay advances `user_id + device_id` server-side cursor only after a successful WebSocket write.
+- WebSocket clients dispatch only `message.send`, `message.reply`, and extension event `interaction.submit` to the Hermes business handler. Stream lifecycle, ack, heartbeat, legacy replay, and unknown events stay in the connection/control layer.
 
 Anything that still treats nested message routing, sender-owned client sends, or removed timestamp/correlation fields as canonical is out of contract for this version.

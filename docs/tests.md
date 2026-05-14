@@ -97,16 +97,27 @@ Uses a local `BaseHTTPRequestHandler` fixture (`api_server`) to verify:
 Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exercises the full state machine:
 
 - Connections answer `connect.challenge` with the msghub `ConnectPayload` and wait for `hello-ok` before `READY`.
+- Matching `hello-fail` logs `auth_failed` and stops reconnect.
 - `connect.challenge` frames are ignored after the connection is already `READY`.
-- `message.send` dispatches after the challenge handshake.
+- `message.send`, `message.reply`, and `interaction.submit` dispatch after the challenge handshake; stream lifecycle, legacy offline, ack, heartbeat, and unknown events remain in the connection/control layer.
 - Bearer auth header is present on connect.
 - Correct subprotocols are sent.
 - `hello-fail` frames do not affect an already-ready connection.
-- Outbound frames queued before `READY` flush in order after `READY`.
-- Connection logs receive / dispatch / send at the info level.
+- Outbound frames queued before `READY` flush in order after `READY`; queue max is 128 and full queues drop the oldest frame.
+- Canonical `clawchat.ws` logs cover connect, handshake, reconnect, queue, ack, heartbeat, and inbound dispatch/control/ignored events.
+- Ack tracking waits only for `message.send` / `message.reply`, starts the timer after actual WebSocket write, rejects without reconnect on timeout, and logs unmatched ack frames.
+- JSON `ping` sends JSON `pong`; JSON `pong` is logged and ignored; heartbeat timeout logs and schedules reconnect.
 - Queued frames survive a failed flush + reconnect.
 - A send failure while `READY` re-queues for the next connection.
 - Backoff progresses both for repeated `connect` failures and for flapping `READY` sessions shorter than `BACKOFF_RESET_AFTER_SECONDS`.
+
+### `tests/test_ws_log.py`
+
+Verifies `optional_field` placeholder rendering and the fixed field order emitted by `format_ws_log`.
+
+### `tests/test_ws_state.py`
+
+Verifies reconnect attempt counting, consecutive reconnect counting, and stable-ready reset behavior.
 
 ### `tests/test_device_id.py`
 

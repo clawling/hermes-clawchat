@@ -17,8 +17,10 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 | File | Purpose | Doc |
 |---|---|---|
 | `clawchat_gateway/adapter.py` | `ClawChatAdapter` — hermes-agent platform adapter | [adapter.md](./adapter.md) |
-| `clawchat_gateway/connection.py` | WebSocket supervisor, handshake, send queue | [connection.md](./connection.md) |
+| `clawchat_gateway/connection.py` | WebSocket supervisor, handshake, queue, ack, heartbeat, inbound dispatch | [connection.md](./connection.md) |
 | `clawchat_gateway/protocol.py` | Frame builders, encoding, and connect payload helpers (Python API) | [protocol.md](./protocol.md) |
+| `clawchat_gateway/ws_log.py` | Deterministic WebSocket lifecycle log formatter | [ws-log.md](./ws-log.md) |
+| `clawchat_gateway/ws_state.py` | WebSocket reconnect attempt/retry tracker | [ws-state.md](./ws-state.md) |
 | `clawchat_gateway/inbound.py` | Inbound WebSocket frame parser | [inbound.md](./inbound.md) |
 | `clawchat_gateway/group_context.py` | Group covenant prompt formatting for `MessageEvent.channel_prompt` | [group-context.md](./group-context.md) |
 | `clawchat_gateway/stream_buffer.py` | `compute_delta` streaming helper | [stream-buffer.md](./stream-buffer.md) |

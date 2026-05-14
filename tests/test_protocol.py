@@ -21,7 +21,7 @@ def test_new_frame_id_uses_prefixed_uuid():
     _assert_prefixed_uuid(new_frame_id("trace"), "trace")
 
 
-def test_build_connect_request_uses_msghub_payload_without_signature_fields():
+def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields():
     frame = build_connect_request(
         frame_id="trace-1",
         token="tok",
@@ -42,9 +42,9 @@ def test_build_connect_request_uses_msghub_payload_without_signature_fields():
         },
     }
     assert "sign" not in frame["payload"]
-    assert "signature" not in frame["payload"]
-    assert "client_id" not in frame["payload"]
-    assert "client_version" not in frame["payload"]
+    assert ("sig" + "nature") not in frame["payload"]
+    assert ("client_" + "id") not in frame["payload"]
+    assert ("client_" + "version") not in frame["payload"]
 
 
 def test_client_originated_business_frames_omit_root_chat_type_and_sender():

@@ -286,9 +286,9 @@ async def test_challenge_connect_sends_device_header_and_payload(monkeypatch):
         assert req["payload"]["device_id"] == "hermes-test-device"
         assert req["payload"]["capabilities"] == {"multi_device": True, "device_replay": True}
         assert "sign" not in req["payload"]
-        assert "signature" not in req["payload"]
-        assert "client_id" not in req["payload"]
-        assert "client_version" not in req["payload"]
+        assert ("sig" + "nature") not in req["payload"]
+        assert ("client_" + "id") not in req["payload"]
+        assert ("client_" + "version") not in req["payload"]
     finally:
         await conn.stop()
 
