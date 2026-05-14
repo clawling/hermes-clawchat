@@ -24,6 +24,7 @@ from clawchat_gateway.protocol import (
     new_frame_id,
 )
 from clawchat_gateway.device_id import get_device_id
+from clawchat_gateway.ws_log import format_ws_log
 
 logger = logging.getLogger("clawchat_gateway.connection")
 
@@ -44,6 +45,7 @@ class ConnectionState(str, enum.Enum):
     HANDSHAKING = "handshaking"
     READY = "ready"
     RECONNECTING = "reconnecting"
+    AUTH_FAILED = "auth_failed"
     CLOSED = "closed"
 
 
@@ -58,13 +60,18 @@ class ClawChatConnection:
         *,
         on_message: OnMessage,
         on_state_change: OnStateChange | None = None,
+        account_id: str = "default",
     ) -> None:
         self._cfg = config
         self._on_message = on_message
         self._on_state_change = on_state_change
+        self._account_id = account_id
         self._state = ConnectionState.DISCONNECTED
         self._ws: Any = None
         self._stopping = False
+        self._auth_failed = False
+        self._attempt = 0
+        self._reconnect_count = 0
         self._supervisor_task: asyncio.Task[None] | None = None
         self._read_task: asyncio.Task[None] | None = None
         self._hello_wait: asyncio.Future[bool] | None = None
@@ -76,6 +83,7 @@ class ClawChatConnection:
         if self._supervisor_task is not None:
             return
         self._stopping = False
+        self._auth_failed = False
         self._supervisor_task = asyncio.create_task(
             self._supervisor(),
             name="clawchat-supervisor",
@@ -187,6 +195,7 @@ class ClawChatConnection:
             self._cfg.heartbeat_interval_ms,
             self._cfg.heartbeat_timeout_ms,
         )
+        self._attempt += 1
         ws = await _ws_connect(
             self._cfg.websocket_url,
             additional_headers={
@@ -206,10 +215,12 @@ class ClawChatConnection:
         self._hello_wait = loop.create_future()
         self._read_task = asyncio.create_task(self._read_loop(ws), name="clawchat-read")
         try:
-            await asyncio.wait_for(
+            hello_ok = await asyncio.wait_for(
                 self._hello_wait,
                 timeout=HANDSHAKE_TIMEOUT_SECONDS,
             )
+            if not hello_ok or self._auth_failed:
+                return False
             await self._set_state(ConnectionState.READY)
             ready_started_at = loop.time()
             await self._flush_send_queue(ws)
@@ -340,6 +351,38 @@ class ClawChatConnection:
             if self._hello_wait is not None and not self._hello_wait.done():
                 logger.info("clawchat ws handshake complete id=%s", self._pending_connect_id)
                 self._hello_wait.set_result(True)
+            return
+        if (
+            self._pending_connect_id
+            and frame.get("event") == "hello-fail"
+            and frame.get("trace_id") == self._pending_connect_id
+        ):
+            payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+            reason = payload.get("reason") if isinstance(payload.get("reason"), str) else None
+            self._auth_failed = True
+            self._stopping = True
+            await self._set_state(ConnectionState.AUTH_FAILED)
+            logger.info(
+                format_ws_log(
+                    event="auth_failed",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.AUTH_FAILED.value,
+                    action="stop_reconnect",
+                    fields=[
+                        ("trace_id", frame.get("trace_id")),
+                        ("reason", reason),
+                    ],
+                )
+            )
+            if self._hello_wait is not None and not self._hello_wait.done():
+                self._hello_wait.set_result(False)
+            if self._ws is not None:
+                try:
+                    await self._ws.close()
+                except Exception:  # noqa: BLE001
+                    pass
             return
         logger.warning(
             "clawchat ws handshake response ignored event=%s trace_id=%s pending_id=%s",

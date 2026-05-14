@@ -145,6 +145,7 @@ class ClawChatAdapter(BasePlatformAdapter):
         self._inbound_window: dict[str, deque[float]] = {}
         self._completed_run_ids: set[str] = set()
         self._completed_run_order: deque[str] = deque()
+        self._auth_failed = False
 
     async def connect(self) -> bool:
         await self._connection.start()
@@ -197,6 +198,8 @@ class ClawChatAdapter(BasePlatformAdapter):
         return False
 
     async def _on_state_change(self, state: ConnectionState) -> None:
+        if state == ConnectionState.AUTH_FAILED:
+            self._auth_failed = True
         logger.info("clawchat state -> %s", state.value)
 
     def _trace_inbound_frame(self, frame: dict[str, Any]) -> None:
