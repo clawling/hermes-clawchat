@@ -59,8 +59,8 @@ Initialises state to `DISCONNECTED`, no supervisor, no websocket, no hello-wait 
 `async _supervisor()` — while not stopping:
 
 1. `CONNECTING`.
-2. `_run_one_connection()` — returns `True` if the session stayed `READY` for `BACKOFF_RESET_AFTER_SECONDS`.
-3. On stable session: reset `delay_seconds`, `retries`, and `reconnect_count`; log `reconnect_backoff_reset`.
+2. `_run_one_connection()` owns one WebSocket session and schedules a stable-ready reset timer when the session enters `READY`.
+3. If the connection remains `READY` for `BACKOFF_RESET_AFTER_SECONDS`, the timer immediately resets `reconnect_count`, resets supervisor backoff on the next disconnect, and logs `reconnect_backoff_reset` while the socket is still ready.
 4. On exception: log canonical `connection_lost`, continue.
 5. Increment `retries`; if over `reconnect_max_retries`, break.
 6. `RECONNECTING`, log `reconnect_scheduled`, sleep `delay + jitter`, double the delay up to `reconnect_max_delay_ms`.
@@ -76,7 +76,7 @@ Final state is `CLOSED`.
 3. On matching `hello-fail`, log `auth_failed`, set state to `AUTH_FAILED`, close the socket, and stop reconnect attempts until credentials are refreshed.
 4. Record `ready_started_at`, log `handshake_ok`, `_flush_send_queue(ws)`, then `await self._read_task` (idle until the server disconnects).
 4. `finally` branch: cancel read task, close ws.
-5. Return `True` iff session stayed `READY` for at least `BACKOFF_RESET_AFTER_SECONDS`.
+5. Cancel the stable-ready reset timer if the session disconnects before it fires.
 
 ### Handshake Helpers
 
@@ -99,5 +99,6 @@ Final state is `CLOSED`.
 | Method | Purpose |
 |---|---|
 | `async _read_loop(ws)` | `async for raw in ws`: decode; on malformed frame log a warning and continue; otherwise log and call `_dispatch_inbound`. |
-| `async _dispatch_inbound(frame)` | During `HANDSHAKING`, route `connect.challenge` to `_handle_challenge` and `hello-ok` / `hello-fail` / `res` frames to `_maybe_finish_handshake`. While `READY`, only `message.send`, `message.reply`, and `interaction.submit` dispatch to `_on_message(frame)`. `message.ack`, JSON `ping` / `pong`, and legacy `offline.batch` / `offline.ack` / `offline.done` are consumed by the connection/control layer. Stream lifecycle events and unknown events log `inbound_ignored` and do not trigger a Hermes agent reply. |
+| `async _dispatch_inbound(frame)` | During `HANDSHAKING`, route `connect.challenge` to `_handle_challenge` and `hello-ok` / `hello-fail` / `res` frames to `_maybe_finish_handshake`. While `READY`, only `message.send` and `message.reply` dispatch to `_on_message(frame)`. `message.ack`, JSON `ping` / `pong`, and legacy `offline.batch` / `offline.ack` / `offline.done` are consumed by the connection/control layer. `interaction.submit`, stream lifecycle events, and unknown events log `inbound_ignored` and do not trigger a Hermes agent reply. |
+| `_schedule_stable_ready_reset()` / `_cancel_stable_ready_reset()` | Start or cancel the five-second stable-ready timer. The timer is cancelled on stop or disconnect before the stable window completes. |
 | `async _handle_heartbeat_timeout()` | Logs canonical `heartbeat_timeout` and closes the socket so the supervisor schedules reconnect. WebSocket protocol ping/pong remains the liveness mechanism; JSON `ping`/`pong` are ordinary protocol frames. |

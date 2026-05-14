@@ -656,6 +656,6 @@ same materialized envelope for missed completed streams.
 - Missed completed streams should be replayed as a single `message.reply` with the full merged fragments instead of replaying `message.created`, `message.add`, or `message.done` individually.
 - Servers replay missed messages as normal downlink envelopes after the WebSocket session opens and MUST NOT require receiver-side ack frames.
 - Device replay advances `user_id + device_id` server-side cursor only after a successful WebSocket write.
-- WebSocket clients dispatch only `message.send`, `message.reply`, and extension event `interaction.submit` to the Hermes business handler. Stream lifecycle, ack, heartbeat, legacy replay, and unknown events stay in the connection/control layer.
+- WebSocket clients dispatch only `message.send` and `message.reply` to the Hermes business handler. `interaction.submit`, stream lifecycle, ack, heartbeat, legacy replay, and unknown events stay in the connection/control layer.
 
 Anything that still treats nested message routing, sender-owned client sends, or removed timestamp/correlation fields as canonical is out of contract for this version.

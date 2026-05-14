@@ -284,7 +284,10 @@ class ClawChatAdapter(BasePlatformAdapter):
     async def _on_message(self, frame: dict[str, Any]) -> None:
         self._trace_inbound_frame(frame)
         if frame.get("event") == "interaction.submit":
-            await self._handle_interaction_submit(frame)
+            logger.info(
+                "clawchat interaction submit ignored chat_id=%s reason=ws_control_event",
+                frame.get("chat_id"),
+            )
             return
         inbound = parse_inbound_message(frame, self._clawchat_config)
         if inbound is None:
@@ -351,49 +354,6 @@ class ClawChatAdapter(BasePlatformAdapter):
             inbound.chat_id,
             inbound.sender_id,
         )
-
-    async def _handle_interaction_submit(self, frame: dict[str, Any]) -> None:
-        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
-        text = self._interaction_submit_text(payload)
-        if text is None:
-            logger.warning(
-                "clawchat interaction submit dropped chat_id=%s reason=unsupported_action",
-                frame.get("chat_id"),
-            )
-            return
-        sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
-        chat_id = str(frame.get("chat_id") or "")
-        sender_id = str(sender.get("id") or "")
-        source = self.build_source(
-            chat_id=chat_id,
-            user_id=sender_id,
-            chat_name=chat_id,
-            chat_type=self._map_source_chat_type(str(frame.get("chat_type") or "direct")),
-        )
-        event = MessageEvent(
-            text=text,
-            message_type=MessageType.TEXT,
-            source=source,
-            raw_message={
-                "clawchat_chat_type": frame.get("chat_type"),
-                "clawchat_interaction_submit": payload,
-                "clawchat_raw": frame,
-            },
-        )
-        await self.handle_message(event)
-
-    def _interaction_submit_text(self, payload: dict[str, Any]) -> str | None:
-        action_id = str(payload.get("action_id") or "").strip().lower()
-        action_payload = payload.get("action_payload")
-        decision = ""
-        if isinstance(action_payload, dict):
-            decision = str(action_payload.get("decision") or "").strip().lower()
-        value = decision or action_id
-        if value in {"approve", "approved", "allow", "yes"}:
-            return "/approve"
-        if value in {"deny", "denied", "reject", "rejected", "no"}:
-            return "/deny"
-        return None
 
     def _should_attach_activation_skill(self, text: str) -> bool:
         if not text:

@@ -73,7 +73,7 @@ class ClawChatAdapter(BasePlatformAdapter):
 | Method | Purpose |
 |---|---|
 | `async _on_state_change(state: ConnectionState)` | Log-only. |
-| `async _on_message(frame: dict)` | Route `interaction.submit`, parse via `parse_inbound_message`, skip if filtered, then delegate to `_handle_inbound`. |
+| `async _on_message(frame: dict)` | Ignore `interaction.submit`, parse message downlinks via `parse_inbound_message`, skip if filtered, then delegate to `_handle_inbound`. The WebSocket connection should only call this for `message.send` / `message.reply`. |
 | `async _handle_inbound(inbound: InboundMessage)` | Resolve `reply_preview`, download media, build `MessageEvent`, attach group-only covenant `channel_prompt` and activation `auto_skill` / prompt when applicable, then `await self.handle_message(event)`. |
 | `_should_attach_activation_skill(text) -> bool` | `True` iff `_ACTIVATION_INTENT_RE` matches. |
 | `_compose_channel_prompt(inbound)` | Build the per-event `channel_prompt`: group covenant for `chat_type == "group"`, activation prompt for activation intent, joined with a blank line when both apply. Direct non-activation messages return `None`. |
@@ -105,7 +105,6 @@ class ClawChatAdapter(BasePlatformAdapter):
 | `_should_suppress_tool_progress(content) -> bool` | `True` when every non-blank line matches `_TOOL_PROGRESS_LINE_RE` and `show_tool_progress` is disabled. |
 | `async _build_fragments(content="", metadata=None, kwargs=None) -> list[dict]` | Produce rich interaction fragments when enabled, else `[{"kind": "text", ...}]`, plus any uploaded media fragments (empty text fallback if both are empty). |
 | `_build_interaction_fragment(content, metadata, kwargs) -> dict \| None` | Builds `approval_request` from `/approve` + `/deny` fallback text or passes validated metadata `clawchat_interaction` / `interaction` through as `approval_request` / `action_card`. |
-| `_handle_interaction_submit(frame) -> None` | Maps `interaction.submit` approve/deny decisions back to Hermes' existing `/approve` / `/deny` text command path because the adapter has no native Hermes approval callback. |
 | `async _build_media_fragments(*, media_urls, metadata, kwargs) -> list[dict]` | Delegate to `media_runtime.upload_outbound_media` using adapter config. |
 | `_infer_media_kind(*, media_url, index, metadata, kwargs) -> str` | Decide `image` / `audio` / `video` / `file` from a mime hint (per-URL map or parallel list) or the URL path suffix. |
 | `_extract_media_mime_hint(...) -> str \| None` | Traverse metadata / kwargs for `media_content_types` or `media_mime_types`. |

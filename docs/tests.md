@@ -99,7 +99,7 @@ Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exer
 - Connections answer `connect.challenge` with the msghub `ConnectPayload` and wait for `hello-ok` before `READY`.
 - Matching `hello-fail` logs `auth_failed` and stops reconnect.
 - `connect.challenge` frames are ignored after the connection is already `READY`.
-- `message.send`, `message.reply`, and `interaction.submit` dispatch after the challenge handshake; stream lifecycle, legacy offline, ack, heartbeat, and unknown events remain in the connection/control layer.
+- `message.send` and `message.reply` dispatch after the challenge handshake; `interaction.submit`, stream lifecycle, legacy offline, ack, heartbeat, and unknown events remain in the connection/control layer.
 - Bearer auth header is present on connect.
 - Correct subprotocols are sent.
 - `hello-fail` frames do not affect an already-ready connection.
@@ -109,7 +109,7 @@ Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exer
 - JSON `ping` sends JSON `pong`; JSON `pong` is logged and ignored; heartbeat timeout logs and schedules reconnect.
 - Queued frames survive a failed flush + reconnect.
 - A send failure while `READY` re-queues for the next connection.
-- Backoff progresses both for repeated `connect` failures and for flapping `READY` sessions shorter than `BACKOFF_RESET_AFTER_SECONDS`.
+- Backoff progresses both for repeated `connect` failures and for flapping `READY` sessions shorter than `BACKOFF_RESET_AFTER_SECONDS`; after a reconnected session stays ready for the stable window, `reconnect_backoff_reset` logs immediately while ready and later send logs use `reconnect_count=0`.
 
 ### `tests/test_ws_log.py`
 

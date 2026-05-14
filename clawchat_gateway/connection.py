@@ -102,6 +102,8 @@ class ClawChatConnection:
         self._send_queue: deque[_QueuedFrame] = deque()
         self._flushing_send_queue = False
         self._pending_acks: dict[str, _PendingAck] = {}
+        self._stable_ready_handle: asyncio.TimerHandle | None = None
+        self._stable_ready_reset_done = False
 
     async def start(self) -> None:
         if self._supervisor_task is not None:
@@ -115,6 +117,7 @@ class ClawChatConnection:
 
     async def stop(self) -> None:
         self._stopping = True
+        self._cancel_stable_ready_reset()
         await self._set_state(ConnectionState.CLOSED)
         if self._read_task is not None:
             self._read_task.cancel()
@@ -196,25 +199,10 @@ class ClawChatConnection:
         while not self._stopping:
             try:
                 await self._set_state(ConnectionState.CONNECTING)
-                stable_session = await self._run_one_connection()
-                if stable_session:
+                await self._run_one_connection()
+                if self._stable_ready_reset_done:
                     delay_seconds = self._cfg.reconnect_initial_delay_ms / 1000.0
                     retries = 0
-                    self._tracker.reset_reconnect_count()
-                    snapshot = self._tracker.snapshot()
-                    self._attempt = snapshot.attempt
-                    self._reconnect_count = snapshot.reconnect_count
-                    logger.info(
-                        format_ws_log(
-                            event="reconnect_backoff_reset",
-                            account_id=self._account_id,
-                            attempt=snapshot.attempt,
-                            reconnect_count=snapshot.reconnect_count,
-                            state=ConnectionState.READY.value,
-                            action="reset",
-                            fields=[("stable_ms", 5000)],
-                        )
-                    )
                 reconnect_reason = "-"
             except asyncio.CancelledError:
                 raise
@@ -295,7 +283,6 @@ class ClawChatConnection:
         )
         self._ws = ws
         self._pending_connect_id = None
-        ready_started_at: float | None = None
         await self._set_state(ConnectionState.HANDSHAKING)
 
         self._hello_wait = loop.create_future()
@@ -308,6 +295,7 @@ class ClawChatConnection:
             if not hello_ok or self._auth_failed:
                 return False
             await self._set_state(ConnectionState.READY)
+            self._schedule_stable_ready_reset()
             elapsed_ms = int((loop.time() - handshake_started_at) * 1000)
             logger.info(
                 format_ws_log(
@@ -324,10 +312,10 @@ class ClawChatConnection:
                     ],
                 )
             )
-            ready_started_at = loop.time()
             await self._flush_send_queue(ws)
             await self._read_task
         finally:
+            self._cancel_stable_ready_reset()
             if self._read_task is not None and not self._read_task.done():
                 self._read_task.cancel()
             try:
@@ -350,9 +338,7 @@ class ClawChatConnection:
                     ],
                 )
             )
-        if ready_started_at is None:
-            return False
-        return (loop.time() - ready_started_at) >= BACKOFF_RESET_AFTER_SECONDS
+        return False
 
     async def _flush_send_queue(self, ws: Any) -> None:
         self._flushing_send_queue = True
@@ -419,7 +405,7 @@ class ClawChatConnection:
         ):
             await self._maybe_finish_handshake(frame)
             return
-        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply", "interaction.submit"}:
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply"}:
             sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
             logger.info(
                 format_ws_log(
@@ -836,3 +822,41 @@ class ClawChatConnection:
         )
         if self._ws is not None:
             await self._ws.close()
+
+    def _schedule_stable_ready_reset(self) -> None:
+        self._cancel_stable_ready_reset()
+        self._stable_ready_reset_done = False
+        loop = asyncio.get_running_loop()
+        attempt = self._attempt
+        self._stable_ready_handle = loop.call_later(
+            BACKOFF_RESET_AFTER_SECONDS,
+            self._reset_reconnect_count_after_stable_ready,
+            attempt,
+        )
+
+    def _cancel_stable_ready_reset(self) -> None:
+        if self._stable_ready_handle is None:
+            return
+        self._stable_ready_handle.cancel()
+        self._stable_ready_handle = None
+
+    def _reset_reconnect_count_after_stable_ready(self, attempt: int) -> None:
+        self._stable_ready_handle = None
+        if self._state != ConnectionState.READY or self._attempt != attempt:
+            return
+        self._tracker.reset_reconnect_count()
+        snapshot = self._tracker.snapshot()
+        self._attempt = snapshot.attempt
+        self._reconnect_count = snapshot.reconnect_count
+        self._stable_ready_reset_done = True
+        logger.info(
+            format_ws_log(
+                event="reconnect_backoff_reset",
+                account_id=self._account_id,
+                attempt=snapshot.attempt,
+                reconnect_count=snapshot.reconnect_count,
+                state=ConnectionState.READY.value,
+                action="reset",
+                fields=[("stable_ms", 5000)],
+            )
+        )

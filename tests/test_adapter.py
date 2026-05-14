@@ -292,7 +292,7 @@ async def test_on_message_maps_reply_preview_to_message_event_fields():
     assert event.reply_to_text == "older message"
 
 
-async def test_on_message_maps_interaction_submit_approve_to_text_command():
+async def test_on_message_ignores_interaction_submit_approve():
     adapter = _make_adapter()
     frame = {
         "event": "interaction.submit",
@@ -310,11 +310,10 @@ async def test_on_message_maps_interaction_submit_approve_to_text_command():
 
     await adapter._on_message(frame)
 
-    assert adapter.handled[0].text == "/approve"
-    assert adapter.handled[0].raw_message["clawchat_interaction_submit"] == frame["payload"]
+    assert adapter.handled == []
 
 
-async def test_on_message_maps_interaction_submit_deny_to_text_command():
+async def test_on_message_ignores_interaction_submit_deny():
     adapter = _make_adapter()
     frame = {
         "event": "interaction.submit",
@@ -332,7 +331,7 @@ async def test_on_message_maps_interaction_submit_deny_to_text_command():
 
     await adapter._on_message(frame)
 
-    assert adapter.handled[0].text == "/deny"
+    assert adapter.handled == []
 
 
 async def test_send_emits_message_reply_for_static_mode():

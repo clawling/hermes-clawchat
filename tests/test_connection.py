@@ -482,7 +482,7 @@ async def test_ready_dispatches_message_reply(monkeypatch):
         await conn.stop()
 
 
-async def test_ready_dispatches_interaction_submit(monkeypatch):
+async def test_ready_ignores_interaction_submit_without_dispatch(monkeypatch, caplog):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     seen_messages = []
@@ -491,27 +491,38 @@ async def test_ready_dispatches_interaction_submit(monkeypatch):
         seen_messages.append(frame)
 
     conn = ClawChatConnection(_cfg(), on_message=on_message)
-    await conn.start()
-    try:
-        await _wait_for_ready(conn, srv)
-        srv.enqueue_from_server(
-            {
-                "version": "2",
-                "event": "interaction.submit",
-                "chat_id": "u1",
-                "sender": {"id": "u1"},
-                "payload": {
-                    "message_id": "msg-1",
-                    "fragment_index": 0,
-                    "fragment_kind": "approval_request",
-                    "action_id": "approve",
-                },
-            }
-        )
-        await _wait_until(lambda: len(seen_messages) == 1)
-        assert seen_messages[0]["event"] == "interaction.submit"
-    finally:
-        await conn.stop()
+    with caplog.at_level(logging.INFO, logger="clawchat_gateway.connection"):
+        await conn.start()
+        try:
+            await _wait_for_ready(conn, srv)
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "interaction.submit",
+                    "trace_id": "interaction-1",
+                    "chat_id": "u1",
+                    "sender": {"id": "u1"},
+                    "payload": {
+                        "message_id": "msg-1",
+                        "fragment_index": 0,
+                        "fragment_kind": "approval_request",
+                        "action_id": "approve",
+                    },
+                }
+            )
+            await _wait_until(
+                lambda: any("trace_id=interaction-1" in record.getMessage() for record in caplog.records)
+            )
+            await asyncio.sleep(0.05)
+            assert seen_messages == []
+        finally:
+            await conn.stop()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert (
+        "clawchat.ws event=inbound_ignored account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=ignore event_name=interaction.submit trace_id=interaction-1"
+    ) in messages
 
 
 async def test_queued_frames_flush_in_order_after_handshake(monkeypatch):
@@ -1055,10 +1066,10 @@ async def test_reconnect_scheduled_uses_canonical_log(monkeypatch, caplog):
     ) in messages
 
 
-async def test_reconnect_backoff_reset_logs_after_stable_ready(monkeypatch, caplog):
+async def test_reconnect_backoff_reset_logs_while_ready_and_updates_later_logs(monkeypatch, caplog):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
-    monkeypatch.setattr("clawchat_gateway.connection.BACKOFF_RESET_AFTER_SECONDS", 0.0)
+    monkeypatch.setattr("clawchat_gateway.connection.BACKOFF_RESET_AFTER_SECONDS", 0.05)
 
     async def on_message(_frame):
         pass
@@ -1069,18 +1080,38 @@ async def test_reconnect_backoff_reset_logs_after_stable_ready(monkeypatch, capl
         try:
             await _wait_for_ready(conn, srv)
             await srv.disconnect()
+            await _wait_until(lambda: len(srv.connect_calls) >= 2)
+            await _complete_handshake(srv)
+            await _wait_until(lambda: conn.is_ready)
             await _wait_until(
                 lambda: any(
                     record.getMessage()
                     == (
-                        "clawchat.ws event=reconnect_backoff_reset account_id=default attempt=1 "
+                        "clawchat.ws event=reconnect_backoff_reset account_id=default attempt=2 "
                         "reconnect_count=0 state=ready action=reset stable_ms=5000"
                     )
                     for record in caplog.records
-                )
+                ),
+                timeout=1.0,
             )
+            await conn.send_frame(
+                {
+                    "version": "2",
+                    "event": "message.reply",
+                    "trace_id": "after-reset",
+                    "chat_id": "chat-1",
+                    "payload": {},
+                }
+            )
+            await srv.read_client_frame(timeout=1.0)
         finally:
             await conn.stop()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert (
+        "clawchat.ws event=send_flush account_id=default attempt=2 reconnect_count=0 "
+        "state=ready action=send event_name=message.reply trace_id=after-reset chat_id=chat-1 remaining=0"
+    ) in messages
 
 
 async def test_backoff_progresses_for_flapping_ready_connections(monkeypatch):
