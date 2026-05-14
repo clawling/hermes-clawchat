@@ -77,7 +77,7 @@ def _write_env_values(values: dict[str, str | None]) -> Path:
 
 def _derive_websocket_url(base_url: str) -> str:
     parsed = urlparse(base_url)
-    if parsed.netloc in {"company.newbaselab.com:19001", "company.newbaselab.com:10086"}:
+    if parsed.netloc == "app.clawling.com":
         return DEFAULT_WEBSOCKET_URL
     scheme = "wss" if parsed.scheme == "https" else "ws"
     return urlunparse((scheme, parsed.netloc, "/v1/ws", "", "", ""))

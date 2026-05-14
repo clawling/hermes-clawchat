@@ -245,15 +245,15 @@ async def test_download_inbound_media_resolves_relative_url_and_writes_local_fil
 
     downloaded = await download_inbound_media(
         ["/media/files/img.png"],
-        base_url="http://company.newbaselab.com:10086",
-        websocket_url="ws://company.newbaselab.com:10086/ws",
+        base_url="https://app.clawling.com",
+        websocket_url="wss://app.clawling.com/ws",
         token="tk",
         download_dir=tmp_path,
     )
 
     assert calls == [
         {
-            "url": "http://company.newbaselab.com:10086/media/files/img.png",
+            "url": "https://app.clawling.com/media/files/img.png",
             "token": "tk",
         }
     ]
@@ -262,6 +262,6 @@ async def test_download_inbound_media_resolves_relative_url_and_writes_local_fil
             local_path=tmp_path / "img.png",
             mime="image/png",
             size=len(b"png-bytes"),
-            source_url="http://company.newbaselab.com:10086/media/files/img.png",
+            source_url="https://app.clawling.com/media/files/img.png",
         )
     ]

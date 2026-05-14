@@ -110,8 +110,8 @@ async def test_on_message_attaches_clawchat_skill_for_activation_intent():
 
 async def test_on_message_downloads_media_before_dispatch(monkeypatch, tmp_path):
     adapter = _make_adapter(
-        base_url="http://company.newbaselab.com:10086",
-        websocket_url="ws://company.newbaselab.com:10086/ws",
+        base_url="https://app.clawling.com",
+        websocket_url="wss://app.clawling.com/ws",
     )
     local_path = tmp_path / "img.png"
     local_path.write_bytes(b"png-bytes")
@@ -124,7 +124,7 @@ async def test_on_message_downloads_media_before_dispatch(monkeypatch, tmp_path)
                 local_path=local_path,
                 mime="image/png",
                 size=len(b"png-bytes"),
-                source_url="http://company.newbaselab.com:10086/media/img.png",
+                source_url="https://app.clawling.com/media/img.png",
             )
         ]
 
@@ -144,7 +144,7 @@ async def test_on_message_downloads_media_before_dispatch(monkeypatch, tmp_path)
     await adapter._handle_inbound(inbound)
 
     assert calls[0]["urls"] == ["/media/img.png"]
-    assert calls[0]["kwargs"]["base_url"] == "http://company.newbaselab.com:10086"
+    assert calls[0]["kwargs"]["base_url"] == "https://app.clawling.com"
     assert adapter.handled[0].media_urls == [str(local_path)]
     assert adapter.handled[0].media_types == ["image/png"]
 

@@ -6,8 +6,8 @@ Thin HTTP client for ClawChat REST endpoints, using `urllib.request` in a worker
 
 | Name | Value |
 |---|---|
-| `DEFAULT_BASE_URL` | `"http://company.newbaselab.com:10086"` |
-| `DEFAULT_WEBSOCKET_URL` | `"ws://company.newbaselab.com:10086/ws"` |
+| `DEFAULT_BASE_URL` | `"https://app.clawling.com"` |
+| `DEFAULT_WEBSOCKET_URL` | `"wss://app.clawling.com/ws"` |
 | `AGENTS_CONNECT_PLATFORM` | `"hermes"` |
 | `AGENTS_CONNECT_TYPE` | `"clawbot"` |
 | `DEFAULT_REQUEST_TIMEOUT` | `30.0` (seconds; passed to `urlopen` for every request) |

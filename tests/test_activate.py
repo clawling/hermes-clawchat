@@ -23,7 +23,7 @@ def test_persist_activation_writes_secrets_to_env_and_config_without_secrets(
         access_token="tk",
         refresh_token="rt",
         user_id="agent-1",
-        base_url="http://company.newbaselab.com:10086",
+        base_url="https://app.clawling.com",
     )
 
     config = yaml.safe_load((hermes_home / "config.yaml").read_text())
@@ -34,7 +34,7 @@ def test_persist_activation_writes_secrets_to_env_and_config_without_secrets(
     assert "token" not in extra
     assert "refresh_token" not in extra
     assert extra["user_id"] == "agent-1"
-    assert extra["websocket_url"] == "ws://company.newbaselab.com:10086/ws"
+    assert extra["websocket_url"] == "wss://app.clawling.com/ws"
     assert config["display"]["platforms"]["clawchat"]["tool_progress"] == "off"
     assert result["restart_required"] is True
 

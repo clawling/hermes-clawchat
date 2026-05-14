@@ -11,8 +11,8 @@ from urllib.request import Request, urlopen
 
 from clawchat_gateway.device_id import get_device_id
 
-DEFAULT_BASE_URL = "http://company.newbaselab.com:10086"
-DEFAULT_WEBSOCKET_URL = "ws://company.newbaselab.com:10086/ws"
+DEFAULT_BASE_URL = "https://app.clawling.com"
+DEFAULT_WEBSOCKET_URL = "wss://app.clawling.com/ws"
 AGENTS_CONNECT_PLATFORM = "hermes"
 AGENTS_CONNECT_TYPE = "clawbot"
 DEFAULT_REQUEST_TIMEOUT = 30.0

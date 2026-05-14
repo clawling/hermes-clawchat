@@ -14,7 +14,7 @@ Exposed as both a Python API (used by the `clawchat_activate` tool handler) and 
 | `_env_path` | `() -> Path` | `$HERMES_HOME/.env`. |
 | `_validate_env_value` | `(key: str, value: str) -> str` | Reject `\n` / `\r` in `.env` values to keep the line-based format intact. Raises `ValueError` when invalid; returns `value` otherwise. |
 | `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Upsert selected `KEY=value` lines in `.env`; preserve unrelated lines; remove keys whose value is `None`. Each non-`None` value goes through `_validate_env_value`. |
-| `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
+| `_derive_websocket_url` | `(base_url: str) -> str` | For the well-known Clawling host (`app.clawling.com`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
 
 ## `persist_activation`
 

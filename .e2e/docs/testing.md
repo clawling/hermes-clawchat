@@ -45,7 +45,7 @@ scripts, fixtures, docs, and `.env.example` are checked in.
   response).
 - A ClawChat user JWT with permission to call
   `POST /v1/agents/connect-codes` against the configured backend
-  (`http://company.newbaselab.com:19001` is hard-coded in the script).
+  (`https://app.clawling.com` is hard-coded in the script).
 
 ## One-time setup
 
