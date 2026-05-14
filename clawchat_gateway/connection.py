@@ -420,6 +420,23 @@ class ClawChatConnection:
             await self._maybe_finish_handshake(frame)
             return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply", "interaction.submit"}:
+            sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
+            logger.info(
+                format_ws_log(
+                    event="inbound_dispatch",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="dispatch",
+                    fields=[
+                        ("event_name", frame.get("event")),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                        ("chat_id", frame.get("chat_id")),
+                        ("sender_id", sender.get("id") if isinstance(sender, dict) else None),
+                    ],
+                )
+            )
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
             fragments = message.get("fragments") if isinstance(message.get("fragments"), list) else []
@@ -448,6 +465,20 @@ class ClawChatConnection:
             await self._on_message(frame)
             return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "message.ack":
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="ack",
+                    fields=[
+                        ("event_name", frame.get("event")),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                    ],
+                )
+            )
             self._handle_ack(frame)
             return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "ping":
@@ -488,6 +519,41 @@ class ClawChatConnection:
                 )
             )
             return
+        if (
+            self._state == ConnectionState.READY
+            and ftype in (None, "event")
+            and frame.get("event") in {"offline.batch", "offline.ack", "offline.done"}
+        ):
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="ignore_legacy",
+                    fields=[
+                        ("event_name", frame.get("event")),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                    ],
+                )
+            )
+            return
+        if self._state == ConnectionState.READY and ftype in (None, "event"):
+            logger.info(
+                format_ws_log(
+                    event="inbound_ignored",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="ignore",
+                    fields=[
+                        ("event_name", frame.get("event")),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                    ],
+                )
+            )
         logger.info(
             "clawchat ws ignored event=%s type=%s state=%s",
             frame.get("event"),

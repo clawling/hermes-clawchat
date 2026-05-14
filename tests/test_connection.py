@@ -824,6 +824,95 @@ async def test_ready_json_ping_sends_pong_and_logs(monkeypatch, caplog):
     ) in messages
 
 
+async def test_inbound_scope_logs_dispatch_control_and_ignored(monkeypatch, caplog):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    seen_messages = []
+
+    async def on_message(frame):
+        seen_messages.append(frame)
+
+    conn = ClawChatConnection(_cfg(), on_message=on_message)
+    with caplog.at_level(logging.INFO, logger="clawchat_gateway.connection"):
+        await conn.start()
+        try:
+            await _wait_for_ready(conn, srv)
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "message.send",
+                    "trace_id": "send-1",
+                    "chat_id": "chat-1",
+                    "sender": {"id": "user-1"},
+                    "payload": {"message": {"fragments": []}},
+                }
+            )
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "message.created",
+                    "trace_id": "created-1",
+                    "chat_id": "chat-1",
+                    "sender": {"id": "user-1"},
+                    "payload": {},
+                }
+            )
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "message.ack",
+                    "trace_id": "ack-1",
+                    "chat_id": "chat-1",
+                    "payload": {},
+                }
+            )
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "offline.batch",
+                    "trace_id": "offline-1",
+                    "payload": {},
+                }
+            )
+            srv.enqueue_from_server(
+                {
+                    "version": "2",
+                    "event": "mystery.event",
+                    "trace_id": "mystery-1",
+                    "payload": {},
+                }
+            )
+            await _wait_until(
+                lambda: any("trace_id=mystery-1" in record.getMessage() for record in caplog.records)
+            )
+        finally:
+            await conn.stop()
+
+    assert [frame["event"] for frame in seen_messages] == ["message.send"]
+    messages = [record.getMessage() for record in caplog.records]
+    assert (
+        "clawchat.ws event=inbound_dispatch account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=dispatch event_name=message.send trace_id=send-1 "
+        "chat_id=chat-1 sender_id=user-1"
+    ) in messages
+    assert (
+        "clawchat.ws event=inbound_ignored account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=ignore event_name=message.created trace_id=created-1"
+    ) in messages
+    assert (
+        "clawchat.ws event=inbound_control account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=ack event_name=message.ack trace_id=ack-1"
+    ) in messages
+    assert (
+        "clawchat.ws event=inbound_control account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=ignore_legacy event_name=offline.batch trace_id=offline-1"
+    ) in messages
+    assert (
+        "clawchat.ws event=inbound_ignored account_id=default attempt=1 reconnect_count=0 "
+        "state=ready action=ignore event_name=mystery.event trace_id=mystery-1"
+    ) in messages
+
+
 async def test_ready_json_pong_logs_and_is_ignored(monkeypatch, caplog):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
