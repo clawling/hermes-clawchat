@@ -6,8 +6,8 @@ A Hermes skill bundled in `skills/clawchat/` and registered with Hermes via `ctx
 
 ```yaml
 name: clawchat
-description: Activate and operate the ClawChat Hermes gateway integration with
-  the registered ClawChat plugin tools. Use when the user asks to activate
+description: Operate the ClawChat Hermes gateway integration with the
+  registered ClawChat plugin tools and activation commands. Use when the user asks to activate
   ClawChat, manage the connected ClawChat account, inspect ClawChat contacts,
   or upload ClawChat media.
 version: 1.1.0
@@ -23,7 +23,7 @@ The skill body encodes these flows (full text lives in `skills/clawchat/SKILL.md
 | Section | What the LLM is told to do |
 |---|---|
 | **Tool boundary** | For ClawChat API operations, call the registered `clawchat_*` plugin tools directly. Do not fall back to `execute`, scripts, direct HTTP calls, or manual token reads. If a matching tool is unavailable, report that instead of inventing a shell path. |
-| **Activation** | If the user provides a code, call `clawchat_activate` with the verbatim code. After success, report that activation is complete and the gateway restart has been scheduled in the background. Do not run a separate gateway restart command. |
+| **Activation** | Activation uses `/clawchat-activate CODE`, `hermes clawchat activate CODE`, or `hermes gateway setup`; there is no activation tool. If the user provides a code in chat, extract it verbatim and tell them to run `/clawchat-activate CODE`. |
 | **Account Profile** | Use `clawchat_get_account_profile` for the connected account, and `clawchat_update_account_profile` for explicit nickname, avatar URL, or bio changes. |
 | **User Profile** | Use `clawchat_get_user_profile` only when the user provides a concrete ClawChat `userId`; ask for the id instead of guessing. |
 | **Friends** | Use `clawchat_list_account_friends` for friends/contacts queries, defaulting to `page=1` and `pageSize=20` unless specified. |
@@ -35,7 +35,7 @@ The skill body encodes these flows (full text lives in `skills/clawchat/SKILL.md
 
 Both the tool `description` strings (in `clawchat_gateway/plugin_tools.py::register_tools`) and this SKILL.md are surfaced to the LLM. When editing one:
 
-- Keep trigger-phrase examples aligned so the activation tool is picked up consistently.
+- Keep trigger-phrase examples aligned so users are routed to `/clawchat-activate CODE` consistently.
 - Keep the "upload-first, then profile" sequence for avatar updates identical in both places.
 - Keep the direct-tool boundary explicit so Hermes does not choose the generic `execute` tool for ClawChat API operations.
 

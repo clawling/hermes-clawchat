@@ -2,7 +2,7 @@
 
 Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`. The module imports `hermes_cli.config` helpers (`get_config_path`, `get_env_path`, `read_raw_config`, `save_config`, `save_env_value`, `remove_env_value`) at import time, so persistence must go through the official Hermes config API. If those helpers are unavailable, activation fails instead of writing config files directly.
 
-Exposed as a Python API, a shared activation-and-restart helper, a native Hermes CLI command (`hermes clawchat activate CODE`), the interactive Hermes gateway setup flow (`hermes gateway setup`), and the `clawchat_activate` tool handler.
+Exposed as a Python API, a shared activation-and-restart helper, a Hermes slash command (`/clawchat-activate CODE`), a native Hermes CLI command (`hermes clawchat activate CODE`), and the interactive Hermes gateway setup flow (`hermes gateway setup`).
 
 ## Helpers
 
@@ -97,9 +97,30 @@ When `restart=False`, the persisted activation result still contains `restart_re
 
 | Entrypoint | Restart behavior | Notes |
 |---|---|---|
-| `clawchat_activate` tool (`handle_clawchat_activate` in `clawchat_gateway/plugin_tools.py`) | Always calls `activate_and_maybe_restart(..., restart=True)`. | Returns a Hermes v0.12-compatible JSON string. Converts exceptions to `_tool_error`. |
+| `/clawchat-activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | In-session slash command registered by `ctx.register_command`. Returns concise status text. |
 | `hermes clawchat activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Preferred scriptable Hermes-native flow. Registered by `ctx.register_cli_command`. |
 | `hermes gateway setup` | Calls `activate_and_maybe_restart(..., restart=False)`. | Preferred interactive flow. The setup hook tells the user that Hermes gateway setup will handle the final service step after finishing. |
+## Hermes Slash Command — `/clawchat-activate CODE`
+
+Registered by the plugin via `ctx.register_command("clawchat-activate", ...)` when the host supports plugin slash commands.
+
+```
+usage: /clawchat-activate CODE [--base-url URL] [--no-restart]
+```
+
+- `code` — positional, required activation code.
+- `--base-url` — default `DEFAULT_BASE_URL`.
+- `--no-restart` — pass `restart=False` to the shared activation helper.
+
+The command calls `activate_and_maybe_restart(code, base_url=..., restart=not no_restart)`. On success it returns concise status lines:
+
+```
+clawchat: activation complete for <user_id>
+clawchat: Hermes restart scheduled in <seconds>s
+```
+
+The restart line is omitted when no restart was scheduled.
+
 ## Native Hermes CLI — `hermes clawchat activate CODE`
 
 Registered by the plugin via `ctx.register_cli_command("clawchat", ...)` when the host supports native plugin CLI commands.

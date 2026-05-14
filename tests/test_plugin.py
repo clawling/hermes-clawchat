@@ -22,6 +22,7 @@ class _Ctx:
         self.skills = {}
         self.hooks = {}
         self.cli_commands = {}
+        self.commands = {}
 
     def register_tool(self, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {"toolset": toolset, "schema": schema, "handler": handler, **kwargs}
@@ -46,6 +47,14 @@ class _Ctx:
             "setup_fn": setup_fn,
             "handler_fn": handler_fn,
             "description": description,
+        }
+
+    def register_command(self, name, handler, description="", args_hint=""):
+        self.commands[name] = {
+            "name": name,
+            "handler": handler,
+            "description": description,
+            "args_hint": args_hint,
         }
 
 
@@ -211,7 +220,6 @@ def test_plugin_registers_all_tools(monkeypatch):
     module.register(ctx)
 
     assert set(ctx.tools) == {
-        "clawchat_activate",
         "clawchat_get_account_profile",
         "clawchat_get_user_profile",
         "clawchat_list_account_friends",
@@ -244,6 +252,18 @@ def test_plugin_registers_native_clawchat_cli_command(monkeypatch):
     )
     assert callable(command["setup_fn"])
     assert callable(command["handler_fn"])
+
+
+def test_plugin_registers_clawchat_activate_slash_command(monkeypatch):
+    module = _load_plugin_module()
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+
+    command = ctx.commands["clawchat-activate"]
+    assert command["description"] == "Activate ClawChat with an activation code."
+    assert command["args_hint"] == "CODE [--base-url URL] [--no-restart]"
+    assert callable(command["handler"])
 
 
 def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
@@ -309,21 +329,6 @@ def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
     assert isinstance(result, str)
     assert "测试账号" in result
     assert json.loads(result) == {"ok": True, "nickname": "测试账号"}
-
-
-def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch):
-    module = _load_plugin_module()
-    ctx = _PlatformCtx()
-    module.register(ctx)
-
-    schema = ctx.tools["clawchat_activate"]["schema"]
-    description = schema["description"]
-    code_description = schema["parameters"]["properties"]["code"]["description"]
-
-    assert "clawchat 的激活码是 R4E1IW" in description
-    assert "Extract the code verbatim" in description
-    assert "connect-codes" in description
-    assert "clawchat 的激活码是" in code_description
 
 
 def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):

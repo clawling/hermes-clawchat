@@ -6,39 +6,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _tool_error(exc: Exception) -> dict:
-    return {"ok": False, "error": str(exc), "kind": exc.__class__.__name__}
-
-
 def _tool_result(payload: dict) -> str:
     """Return a Hermes v0.12-compatible tool result string."""
     return json.dumps(payload, ensure_ascii=False)
-
-
-async def handle_clawchat_activate(args, **kw):
-    task_id = kw.get("task_id") or "default"
-    handle_clawchat_activate._last_task_id = task_id
-    logger.info("clawchat_activate start task_id=%s", task_id)
-    try:
-        from clawchat_gateway.activate import activate_and_maybe_restart
-        from clawchat_gateway.api_client import DEFAULT_BASE_URL
-
-        base_url = str(args.get("baseUrl") or "").strip() or DEFAULT_BASE_URL
-        result = await activate_and_maybe_restart(
-            str(args.get("code") or "").strip(),
-            base_url=base_url,
-            restart=True,
-        )
-        logger.info("clawchat_activate done task_id=%s user_id=%s", task_id, result.get("user_id"))
-        logger.info(
-            "clawchat_activate scheduled restart task_id=%s command=%s",
-            task_id,
-            result.get("restart_command"),
-        )
-        return _tool_result(result)
-    except Exception as exc:
-        logger.warning("clawchat_activate failed task_id=%s error=%s", task_id, exc)
-        return _tool_result(_tool_error(exc))
 
 
 async def handle_clawchat_get_account_profile(args, **kw):
@@ -131,42 +101,6 @@ def _direct_tool_description(description: str) -> str:
 
 
 def register_tools(ctx) -> None:
-    activate_schema = {
-        "name": "clawchat_activate",
-        "description": _direct_tool_description(
-            "Exchange a ClawChat activation/invite code for credentials for the agent's connected "
-            "ClawChat account, then persist credentials in this runtime's config. Always use this when "
-            "the user says a ClawChat activation/invite code or asks to activate, connect, bind, or log in ClawChat. "
-            "Examples include `clawchat 的激活码是 R4E1IW`, `ClawChat激活码: R4E1IW`, and `activate clawchat R4E1IW`. "
-            "Extract the code verbatim. Do not normalize, lowercase, add prefixes, or invent a code. "
-            "If activation intent lacks a code, ask for the activation/invite code before calling this tool. Do not call connect-codes."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "description": "The ClawChat activation/invite code (six uppercase letters/digits, e.g. 'A1B2C3') extracted verbatim from the user's message for the agent's connected ClawChat account. For `clawchat 的激活码是 R4E1IW`, use `R4E1IW`. Whitespace is trimmed automatically; ask for the code if activation intent lacks one.",
-                },
-                "baseUrl": {
-                    "type": "string",
-                    "description": "Optional ClawChat HTTP API base URL. Defaults to the NewBase ClawChat endpoint.",
-                },
-            },
-            "required": ["code"],
-        },
-    }
-
-    ctx.register_tool(
-        "clawchat_activate",
-        "clawchat",
-        activate_schema,
-        handle_clawchat_activate,
-        is_async=True,
-        description="Activate ClawChat credentials from a user-provided activation code.",
-        emoji="🔑",
-    )
-
     ctx.register_tool(
         "clawchat_get_account_profile",
         "clawchat",

@@ -6,7 +6,6 @@ Hermes-facing tool registration and JSON-string result adapters for the ClawChat
 
 | Function | Purpose |
 |---|---|
-| `_tool_error(exc)` | Shape activation exceptions as `{"ok": false, "error": "...", "kind": "..."}`. |
 | `_tool_result(payload)` | Serialize a tool payload with `json.dumps(..., ensure_ascii=False)` for Hermes v0.12-compatible string results. |
 | `_optional_int_arg(value)` | Normalize optional pagination args from schema input before passing them to `clawchat_gateway.tools`. |
 | `_direct_tool_description(description)` | Append the direct-tool boundary that tells the LLM not to fall back to `execute`, shell scripts, curl, or direct HTTP calls. |
@@ -17,7 +16,6 @@ Each handler is `async`, takes `(args: dict, **kw)`, logs `task_id`, and returns
 
 | Handler | Args | Backing |
 |---|---|---|
-| `handle_clawchat_activate` | `code`, optional `baseUrl` | `clawchat_gateway.activate.activate_and_maybe_restart(..., restart=True)` |
 | `handle_clawchat_get_account_profile` | — | `clawchat_gateway.tools.get_account_profile` |
 | `handle_clawchat_get_user_profile` | `userId` | `clawchat_gateway.tools.get_user_profile` |
 | `handle_clawchat_list_account_friends` | optional `page`, optional `pageSize` | `clawchat_gateway.tools.list_account_friends` |
@@ -27,9 +25,8 @@ Each handler is `async`, takes `(args: dict, **kw)`, logs `task_id`, and returns
 
 ## Registration
 
-`register_tools(ctx)` registers seven tools with fixed JSON schemas. The `name` inside each schema matches the registration key. Description text is intentionally prescriptive because it is surfaced to the LLM:
+`register_tools(ctx)` registers six account/profile/media tools with fixed JSON schemas. The `name` inside each schema matches the registration key. Description text is intentionally prescriptive because it is surfaced to the LLM:
 
-- `clawchat_activate` — exchange an activation code for credentials.
 - `clawchat_get_account_profile` — fetch the configured account profile.
 - `clawchat_get_user_profile` — fetch a public profile by explicit `userId`.
 - `clawchat_list_account_friends` — list account friends with pagination.

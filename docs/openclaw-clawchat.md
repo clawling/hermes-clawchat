@@ -122,7 +122,7 @@ Error: Clawling Chat setup requires --code (invite code from your admin).
 openclaw channels login --channel openclaw-clawchat
 
 # Programmatic login from an agent turn:
-# the LLM invokes the `clawchat_activate` tool with `{ code: "INV-ABC123" }`
+# Hermes-side activation now uses `/clawchat-activate INV-ABC123`
 # — trigger phrases include "clawchat INV-ABC123", "activate clawchat",
 # "use invite code XYZ".
 ```
@@ -221,13 +221,12 @@ a bare chat_id and default to direct.
 
 ## Tools
 
-All tool names start with `clawchat_`. The activation tool is registered
+All Hermes tool names start with `clawchat_`. Activation is handled by commands
 **unconditionally**; the rest register only when the account is configured
 (i.e. after a successful login).
 
 | Tool                         | When registered | Purpose                                              |
 | ---------------------------- | --------------- | ---------------------------------------------------- |
-| `clawchat_activate`          | always          | Exchange invite code for a token (onboarding)        |
 | `clawchat_get_my_profile`    | after login     | Fetch the agent's own profile                        |
 | `clawchat_get_user_info`     | after login     | Fetch a user profile by `userId`                     |
 | `clawchat_list_friends`      | after login     | Paginated friend list (`page`, `pageSize`)           |
@@ -236,7 +235,7 @@ All tool names start with `clawchat_`. The activation tool is registered
 
 Tool trigger hints (visible to the LLM via each tool's `description`):
 
-- `clawchat_activate`: fires on `clawchat <code>` / `activate clawchat` / `login to clawchat` / any invite-code looking paste.
+- `/clawchat-activate`: use for activation/invite-code onboarding.
 - `clawchat_update_my_profile`: fires on name-change phrases (`your name is X`, `change your name to X`, `你叫 X`, `改名为 X`, etc.) and avatar-change phrases (`change your avatar`, `生成头像`, `换个头像`) — the agent is expected to chain `clawchat_upload_file` → `clawchat_update_my_profile` for avatar URLs.
 
 ## Agent prompt hints

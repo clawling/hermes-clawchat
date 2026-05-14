@@ -55,6 +55,10 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 - `setup_clawchat_cli` parses `hermes clawchat activate CODE` defaults and `--base-url` / `--no-restart` options.
 - `handle_clawchat_cli` calls `activate_and_maybe_restart(..., restart=True)` by default, prints the activation and restart status lines, and honors `--no-restart` by omitting the restart line.
 
+### `tests/test_clawchat_command.py`
+
+- `handle_clawchat_activate_command` parses `/clawchat-activate CODE` raw arguments, calls `activate_and_maybe_restart(..., restart=True)` by default, returns the activation and restart status lines, honors `--no-restart`, and returns usage text when the code is missing.
+
 ### `tests/test_group_context.py`
 
 - `format_group_covenant_prompt` returns `None` for blank covenant text.
@@ -114,9 +118,8 @@ Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exer
 
 Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 
-- `register(ctx)` adds the seven ClawChat tools and a skill.
+- `register(ctx)` adds the six account/profile/media ClawChat tools, the `/clawchat-activate` slash command, and a skill.
 - Tool handlers in `clawchat_gateway.plugin_tools` accept and echo `task_id`.
-- `handle_clawchat_activate` delegates to `activate_and_maybe_restart(..., restart=True)`.
 
 ### `tests/test_plugin.py`
 
@@ -127,14 +130,14 @@ Comprehensive registration / schema / behavior tests for the repo-root `__init__
 - `test_plugin_platform_check_only_verifies_dependencies` — the registered `check_fn` returns `True` when `_clawchat_dependencies_available` is True, **without** invoking `_clawchat_connection_configured` (separation of dependency check from credential validation).
 - `test_plugin_platform_validation_falls_back_to_home_config` — `validate_config(SimpleNamespace(extra={}))` returns `True` when the merged `$HERMES_HOME/config.yaml` supplies `websocket_url` and the `.env` supplies `CLAWCHAT_TOKEN`.
 - `test_plugin_adapter_factory_merges_home_config` — adapter factory merges `extra` from `$HERMES_HOME/config.yaml` so a sparse runtime config still produces a fully populated `ClawChatConfig`.
-- `test_plugin_registers_all_tools` — registers exactly the seven `clawchat_*` tools, all `is_async=True`.
+- `test_plugin_registers_all_tools` — registers exactly the six account/profile/media `clawchat_*` tools, all `is_async=True`.
 - `test_plugin_tool_registration_is_delegated_to_gateway_module` — tool registration is delegated to `clawchat_gateway.plugin_tools` rather than kept in the repo-root entrypoint.
 - `test_plugin_registers_native_clawchat_cli_command` — `register(ctx)` exposes the native `clawchat` plugin CLI command through `ctx.register_cli_command`.
+- `test_plugin_registers_clawchat_activate_slash_command` — `register(ctx)` exposes `/clawchat-activate` through `ctx.register_command`.
 - `test_plugin_tool_descriptions_forbid_execute_fallbacks` — every tool description includes `"Do not use execute"`.
 - `test_upload_media_tool_description_is_link_only_not_current_chat_delivery` — `clawchat_upload_media_file` description distinguishes "shareable URL" upload vs `MEDIA:/absolute/local/path` for current-chat delivery.
 - `test_clawchat_skill_uses_plugin_tools_not_shell_commands` / `…_distinguishes_media_delivery_from_media_link_uploads` — direct text assertions on `skills/clawchat/SKILL.md` keep the skill aligned with the tool registration.
 - `test_plugin_tool_handlers_return_json_strings_for_hermes_v012` — `handle_clawchat_get_account_profile` returns a JSON string (not a dict) because Hermes v0.12 expects strings; verifies UTF-8 round-trip.
-- `test_activate_schema_triggers_on_chinese_activation_code_phrase` — schema description and `code` parameter description both include the bilingual trigger phrasing the LLM uses to extract the code.
 - `test_plugin_upload_avatar_image_rejects_relative_path` — handler returns a `validation` error envelope for relative paths (without making any API calls).
 - `test_plugin_requires_platform_registry` — `register(ctx)` raises a clear error when the host lacks `ctx.register_platform`.
 

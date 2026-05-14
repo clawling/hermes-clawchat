@@ -23,8 +23,8 @@ def _plugin_dir() -> Path:
 
 # Hermes loads this plugin as ``hermes_plugins.clawchat`` and only sets up
 # its ``__path__`` for relative submodule imports. The plugin's own helpers
-# and the ``python -m clawchat_gateway.activate`` CLI both reach for the
-# package via absolute imports, so the plugin root must be on ``sys.path``.
+# reach for the package via absolute imports, so the plugin root must be on
+# ``sys.path``.
 _PLUGIN_ROOT = str(_plugin_dir())
 if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
@@ -160,9 +160,8 @@ def _register_platform(ctx) -> bool:
         is_connected=_validate_clawchat_platform_config,
         required_env=["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"],
         install_hint=(
-            "Activate ClawChat with python -m clawchat_gateway.activate CODE, "
-            "or set CLAWCHAT_TOKEN and CLAWCHAT_REFRESH_TOKEN, then configure "
-            "websocket_url in config.yaml."
+            "Activate ClawChat with hermes gateway setup, hermes clawchat activate CODE, "
+            "or /clawchat-activate CODE."
         ),
         allowed_users_env="CLAWCHAT_ALLOWED_USERS",
         allow_all_env="CLAWCHAT_ALLOW_ALL_USERS",
@@ -200,8 +199,8 @@ def _resolve_clawchat_bot_user_id(gateway) -> str | None:
     """Look up the ClawChat bot's own user_id from the loaded gateway config.
 
     Re-resolved on every hook call rather than cached at register time —
-    `clawchat_activate` rewrites this value live and we don't want to keep
-    a stale read from before activation.
+    activation rewrites this value live and we don't want to keep a stale read
+    from before activation.
     """
     try:
         from gateway.config import Platform
@@ -273,6 +272,21 @@ def _register_cli_commands(ctx) -> None:
     )
 
 
+def _register_commands(ctx) -> None:
+    register_command = getattr(ctx, "register_command", None)
+    if not callable(register_command):
+        return
+
+    from clawchat_gateway.commands import handle_clawchat_activate_command
+
+    register_command(
+        "clawchat-activate",
+        handle_clawchat_activate_command,
+        description="Activate ClawChat with an activation code.",
+        args_hint="CODE [--base-url URL] [--no-restart]",
+    )
+
+
 def register(ctx) -> None:
     _register_platform(ctx)
     _configure_runtime_defaults()
@@ -281,6 +295,7 @@ def register(ctx) -> None:
 
     register_tools(ctx)
     _register_cli_commands(ctx)
+    _register_commands(ctx)
     ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)
 
     skill = _plugin_dir() / "skills" / "clawchat" / "SKILL.md"

@@ -73,6 +73,16 @@ def test_activation_module_binds_official_config_helpers_at_import(
     assert not hasattr(activate_mod, "_hermes_config_api")
 
 
+def test_activation_module_is_not_a_cli_script(tmp_path: Path, monkeypatch) -> None:
+    hermes_home = tmp_path / ".hermes"
+    activate_mod, _saved_env, _removed_env, _saved_configs = _load_activate_with_hermes_config_helpers(
+        monkeypatch,
+        hermes_home,
+    )
+
+    assert not hasattr(activate_mod, "main")
+
+
 def test_persist_activation_writes_secrets_to_env_and_config_without_secrets(
     tmp_path: Path, monkeypatch
 ) -> None:

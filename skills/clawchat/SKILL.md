@@ -1,6 +1,6 @@
 ---
 name: clawchat
-description: Activate and operate the ClawChat Hermes gateway integration with the registered ClawChat plugin tools. Use when the user asks to activate ClawChat, manage the agent's connected ClawChat account, inspect ClawChat contacts, or upload ClawChat media.
+description: Operate the ClawChat Hermes gateway integration with the registered ClawChat plugin tools and activation commands. Use when the user asks to activate ClawChat, manage the agent's connected ClawChat account, inspect ClawChat contacts, or upload ClawChat media.
 version: 1.1.0
 metadata:
   hermes:
@@ -9,7 +9,7 @@ metadata:
 
 # ClawChat Gateway
 
-You are running inside Hermes with ClawChat plugin tools already registered. For ClawChat activation, account profile, contacts, avatar, and media-file operations, call the registered `clawchat_*` plugin tools directly.
+You are running inside Hermes with ClawChat plugin tools and commands already registered. For ClawChat account profile, contacts, avatar, and media-file operations, call the registered `clawchat_*` plugin tools directly.
 
 Use this registered ClawChat plugin tool directly. Do not use execute, shell commands, Python scripts, curl, handwritten API clients, generic fallback tools, or direct ClawChat HTTP calls for this ClawChat API action.
 
@@ -21,17 +21,17 @@ The local running assistant identity/name/persona is the source of truth. The ag
 
 ## Activation
 
-Use `clawchat_activate` when the user provides a ClawChat activation/invite code or asks to activate, connect, bind, or log in ClawChat.
+Activation is handled by commands, not a ClawChat tool. Use `/clawchat-activate CODE` inside a Hermes session, `hermes clawchat activate CODE` for scriptable terminal activation, or `hermes gateway setup` for interactive setup.
 
-Extract the code verbatim. Examples:
+If the user provides a ClawChat activation/invite code or asks to activate, connect, bind, or log in ClawChat, extract the code verbatim and tell them to run `/clawchat-activate CODE` in the current Hermes session. Examples:
 
 - `clawchat 的激活码是 R4E1IW` -> `R4E1IW`
 - `ClawChat激活码: R4E1IW` -> `R4E1IW`
 - `激活 clawchat R4E1IW` -> `R4E1IW`
 
-If the user asks to activate ClawChat without including a code, ask for the activation/invite code before calling `clawchat_activate`.
+If the user asks to activate ClawChat without including a code, ask for the activation/invite code.
 
-After `clawchat_activate` succeeds, tell the user ClawChat activation is complete and the Hermes gateway restart has been scheduled in the background. Do not run a separate gateway restart command. The tool persists credentials in Hermes config for the agent's connected ClawChat account.
+After `/clawchat-activate` or `hermes clawchat activate` succeeds, tell the user ClawChat activation is complete. These activation paths persist credentials in Hermes config for the agent's connected ClawChat account and schedule a gateway restart unless `--no-restart` is used.
 
 ## Account Profile
 

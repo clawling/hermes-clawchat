@@ -12,6 +12,7 @@ class _Ctx:
         self.skills = {}
         self.hooks = {}
         self.platforms = {}
+        self.commands = {}
 
     def register_tool(self, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {
@@ -35,6 +36,13 @@ class _Ctx:
             **kwargs,
         }
 
+    def register_command(self, name, handler, description="", args_hint=""):
+        self.commands[name] = {
+            "handler": handler,
+            "description": description,
+            "args_hint": args_hint,
+        }
+
 
 def _load_root_plugin():
     plugin_path = Path(__file__).resolve().parents[1] / "__init__.py"
@@ -53,7 +61,6 @@ def test_git_plugin_registers_tools_and_skill(monkeypatch):
     module.register(ctx)
 
     assert set(ctx.tools) == {
-        "clawchat_activate",
         "clawchat_get_account_profile",
         "clawchat_get_user_profile",
         "clawchat_list_account_friends",
@@ -61,13 +68,12 @@ def test_git_plugin_registers_tools_and_skill(monkeypatch):
         "clawchat_upload_avatar_image",
         "clawchat_upload_media_file",
     }
-    assert ctx.tools["clawchat_activate"]["toolset"] == "clawchat"
-    assert ctx.tools["clawchat_activate"]["is_async"] is True
     assert ctx.tools["clawchat_update_account_profile"]["is_async"] is True
     assert ctx.tools["clawchat_upload_avatar_image"]["is_async"] is True
     assert "upload" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
     assert "clawchat_update_account_profile" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
     assert "clawchat" in ctx.skills
+    assert "clawchat-activate" in ctx.commands
 
 
 def test_git_plugin_handlers_accept_task_id(monkeypatch):
@@ -91,27 +97,3 @@ def test_git_plugin_handlers_accept_task_id(monkeypatch):
     assert json.loads(result) == {
         "updated": {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"}
     }
-
-
-def test_clawchat_activate_handler_uses_shared_activation_runner(monkeypatch):
-    _load_root_plugin()
-    called = []
-
-    async def fake_runner(code: str, *, base_url: str, restart: bool):
-        called.append((code, base_url, restart))
-        return {"ok": True, "user_id": "agent-1"}
-
-    import clawchat_gateway.activate as activate_mod
-
-    monkeypatch.setattr(activate_mod, "activate_and_maybe_restart", fake_runner)
-    from clawchat_gateway import plugin_tools
-
-    result = asyncio.run(
-        plugin_tools.handle_clawchat_activate(
-            {"code": "ABC123", "baseUrl": "https://chat.example"},
-            task_id="trace-activate",
-        )
-    )
-
-    assert called == [("ABC123", "https://chat.example", True)]
-    assert json.loads(result) == {"ok": True, "user_id": "agent-1"}

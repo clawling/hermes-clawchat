@@ -8,7 +8,7 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 
 | File | Purpose | Doc |
 |---|---|---|
-| `__init__.py` (repo root) | Hermes plugin entrypoint — registers the ClawChat platform, tool module, CLI, hooks, and skill | [plugin-entrypoint.md](./plugin-entrypoint.md) |
+| `__init__.py` (repo root) | Hermes plugin entrypoint — registers the ClawChat platform, tool module, CLI, slash command, hooks, and skill | [plugin-entrypoint.md](./plugin-entrypoint.md) |
 | `plugin.yaml` | Hermes plugin manifest | [plugin-entrypoint.md](./plugin-entrypoint.md) |
 | `clawchat_gateway/__init__.py` | Package surface | [plugin-entrypoint.md](./plugin-entrypoint.md) |
 
@@ -31,7 +31,8 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 |---|---|---|
 | `clawchat_gateway/config.py` | `ClawChatConfig` dataclass + env-var resolution | [config.md](./config.md) |
 | `clawchat_gateway/api_client.py` | REST HTTP client (`ClawChatApiClient`) | [api-client.md](./api-client.md) |
-| `clawchat_gateway/activate.py` | Activation CLI (`/v1/agents/connect`) | [activate.md](./activate.md) |
+| `clawchat_gateway/activate.py` | Activation helpers (`/v1/agents/connect`, persistence, restart orchestration) | [activate.md](./activate.md) |
+| `clawchat_gateway/commands.py` | Hermes `/clawchat-activate` slash command handler | [commands.md](./commands.md) |
 | `clawchat_gateway/cli.py` | Native Hermes `hermes clawchat ...` command wiring | [cli.md](./cli.md) |
 | `clawchat_gateway/setup.py` | Interactive Hermes gateway setup hook | [setup.md](./setup.md) |
 | `clawchat_gateway/restart.py` | `schedule_gateway_restart` — detached `hermes gateway restart` | [restart.md](./restart.md) |

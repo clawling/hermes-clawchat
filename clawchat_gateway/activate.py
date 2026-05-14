@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import argparse
-import asyncio
-import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -136,27 +133,3 @@ async def activate_and_maybe_restart(
         )
     return payload
 
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m clawchat_gateway.activate")
-    parser.add_argument("code", help="ClawChat activation code")
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument(
-        "--no-restart",
-        action="store_true",
-        help="Skip the detached `hermes gateway restart` dispatched after activation.",
-    )
-    args = parser.parse_args(argv)
-    payload = asyncio.run(
-        activate_and_maybe_restart(
-            args.code,
-            base_url=args.base_url,
-            restart=not args.no_restart,
-        )
-    )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

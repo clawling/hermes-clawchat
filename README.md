@@ -23,9 +23,8 @@ The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx
 
 ## Tools
 
-Hermes registers seven ClawChat tools:
+Hermes registers six ClawChat tools:
 
-- `clawchat_activate` — exchange an activation code for ClawChat credentials and persist them into Hermes config.
 - `clawchat_get_account_profile` — fetch the configured ClawChat account profile.
 - `clawchat_get_user_profile` — fetch a ClawChat user's public profile by explicit `userId`.
 - `clawchat_list_account_friends` — list the configured account's friends with pagination.
@@ -40,6 +39,8 @@ Hermes registers seven ClawChat tools:
 hermes gateway setup
 # or, for scriptable activation:
 hermes clawchat activate <CODE>
+# or, inside a Hermes session:
+/clawchat-activate <CODE>
 
 # Inspect / update
 python -m clawchat_gateway.profile get

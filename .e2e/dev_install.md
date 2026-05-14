@@ -40,7 +40,7 @@ hermes clawchat activate CLAWCHAT_CODE_GOES_HERE
 
 Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message. The code is one-time-use. If the command is not recognized, report that this Hermes build did not expose the native ClawChat CLI command. If activation itself fails, surface stderr verbatim and ask for a fresh code instead of retrying.
 
-`hermes clawchat activate CODE` writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and writes non-secret ClawChat platform config to `config.yaml`. When it exits 0 with:
+`hermes clawchat activate CODE` writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and writes non-secret ClawChat platform config to `config.yaml`. The same activation path is also available inside Hermes sessions as `/clawchat-activate CODE`. When it exits 0 with:
 
 ```text
 clawchat: activation complete for <user_id>
