@@ -33,7 +33,7 @@ The skill body encodes these flows (full text lives in `skills/clawchat/SKILL.md
 
 ## Consistency contract
 
-Both the tool `description` strings (in the repo-root `__init__.py::_register_tools`) and this SKILL.md are surfaced to the LLM. When editing one:
+Both the tool `description` strings (in `clawchat_gateway/plugin_tools.py::register_tools`) and this SKILL.md are surfaced to the LLM. When editing one:
 
 - Keep trigger-phrase examples aligned so the activation tool is picked up consistently.
 - Keep the "upload-first, then profile" sequence for avatar updates identical in both places.

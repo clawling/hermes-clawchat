@@ -11,7 +11,7 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 1. Hermes loads the repo root as a plugin. Module-level code in `__init__.py` prepends the plugin root to `sys.path` so absolute imports of `clawchat_gateway.*` resolve both in this process and in the `python -m clawchat_gateway.activate` subprocess. Hermes then calls `register(ctx)`.
 2. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, `setup_fn`, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` raises a clear `RuntimeError`.
 3. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
-4. `_register_tools(ctx)` registers seven tools:
+4. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers seven tools:
    - `clawchat_activate` — exchange an activation code for ClawChat credentials.
    - `clawchat_get_account_profile` — fetch the configured account profile.
    - `clawchat_get_user_profile` — fetch a public profile by explicit `userId`.
@@ -26,7 +26,7 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 ## Runtime data flow
 
 ```
-Hermes LLM  <---- tool results ----  _handle_clawchat_* handlers  (in __init__.py)
+Hermes LLM  <---- tool results ----  handle_clawchat_* handlers  (plugin_tools.py)
     |                                        ^
     v                                        |
   (platform: CLAWCHAT)              clawchat_gateway.activate / tools / profile

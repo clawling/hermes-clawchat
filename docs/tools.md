@@ -1,6 +1,6 @@
 # Tools — `clawchat_gateway/tools.py`
 
-Single source of truth for the six account/profile/media tool handlers. Both the Hermes tool registration in the repo-root `__init__.py` (`_handle_clawchat_*`) and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
+Single source of truth for the six account/profile/media REST handlers. Both the Hermes-facing wrappers in `clawchat_gateway/plugin_tools.py` and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
 
 ## Constants
 
@@ -42,7 +42,7 @@ All handlers are `async`, return `dict[str, Any]`, and never raise. Each catches
 
 ## Error envelope contract
 
-Both Hermes tool results (re-serialised via `_tool_result` in `__init__.py`) and `profile` CLI output (via `profile.main`) propagate this envelope unchanged:
+Both Hermes tool results (re-serialized via `_tool_result` in `clawchat_gateway/plugin_tools.py`) and `profile` CLI output (via `profile.main`) propagate this envelope unchanged:
 
 ```json
 {
@@ -57,7 +57,7 @@ The `meta` block is only present for `_api_error` results that carry one of `sta
 ## Adding a new handler
 
 1. Add the `async def` here, following the `(_build_client → call → catch ClawChatApiError → catch Exception)` pattern.
-2. Surface it from `__init__.py::_register_tools` with a JSON schema and an emoji; wire a thin `_handle_clawchat_<name>` dispatcher that wraps the result with `_tool_result(...)`.
+2. Surface it from `clawchat_gateway/plugin_tools.py::register_tools` with a JSON schema and an emoji; wire a thin `handle_clawchat_<name>` dispatcher that wraps the result with `_tool_result(...)`.
 3. Surface it from `profile.py::main` as a subparser that calls the handler with `asyncio.run` and prints the same JSON.
 4. Add the tool name to `plugin.yaml::provides_tools`.
 5. Mirror the trigger/usage guidance in `skills/clawchat/SKILL.md`.

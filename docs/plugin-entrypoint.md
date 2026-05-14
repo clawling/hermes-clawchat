@@ -1,6 +1,6 @@
 # Plugin Entrypoint
 
-Covers the repo-root `__init__.py`, `plugin.yaml`, and `clawchat_gateway/__init__.py`.
+Covers the repo-root `__init__.py`, `plugin.yaml`, `clawchat_gateway/plugin_tools.py`, and `clawchat_gateway/__init__.py`.
 
 ## `plugin.yaml`
 
@@ -53,26 +53,6 @@ builds without `ctx.register_platform` are not supported.
 | `_register_platform` | `(ctx) -> bool` | Register the `clawchat` platform with adapter factory, `setup_fn`, validation hooks, auth env vars, max message length, emoji, and platform hint. Raises `RuntimeError` if the host lacks `ctx.register_platform`. |
 | `_configure_runtime_defaults` | `() -> None` | Configure allow-all and streaming defaults via `clawchat_gateway.runtime_defaults`. |
 
-### Tool error shaping
-
-| Function | Signature | Purpose |
-|---|---|---|
-| `_tool_error` | `(exc: Exception) -> dict` | Return `{"ok": False, "error": str(exc), "kind": exc.__class__.__name__}`. |
-
-### Tool handlers
-
-Each handler is `async`, takes `(args: dict, **kw)`, logs `task_id`, and returns a dict. `clawchat_activate` uses `_tool_error(exc)` to shape activation failures. The six account/media handlers delegate to `clawchat_gateway.tools` and return that module's result envelope directly.
-
-| Handler | Args | Backing |
-|---|---|---|
-| `_handle_clawchat_activate` | `code`, optional `baseUrl` | `clawchat_gateway.activate.activate_and_maybe_restart(..., restart=True)` |
-| `_handle_clawchat_get_account_profile` | — | `clawchat_gateway.tools.get_account_profile` |
-| `_handle_clawchat_get_user_profile` | `userId` | `clawchat_gateway.tools.get_user_profile` |
-| `_handle_clawchat_list_account_friends` | optional `page`, optional `pageSize` | `clawchat_gateway.tools.list_account_friends` |
-| `_handle_clawchat_update_account_profile` | optional `nickname`, optional `avatar_url`, optional `bio` (>=1) | `clawchat_gateway.tools.update_account_profile` |
-| `_handle_clawchat_upload_avatar_image` | `filePath` | `clawchat_gateway.tools.upload_avatar_image` |
-| `_handle_clawchat_upload_media_file` | `filePath` | `clawchat_gateway.tools.upload_media_file` |
-
 ### Self-echo guard (`pre_gateway_dispatch` hook)
 
 | Function | Signature | Purpose |
@@ -85,15 +65,7 @@ Without this hook, hermes-agent's interrupt-on-new-message logic treats the WebS
 
 ### Tool registration
 
-`_register_tools(ctx)` registers seven tools with fixed JSON schemas. The `name` inside each schema matches the registration key. Description text is intentionally prescriptive because it is surfaced to the LLM:
-
-- `clawchat_activate` (🔑) — exchange an activation code for credentials.
-- `clawchat_get_account_profile` (👤) — fetch the configured account profile.
-- `clawchat_get_user_profile` (🧑) — fetch a public profile by explicit `userId`.
-- `clawchat_list_account_friends` (👥) — list account friends with pagination.
-- `clawchat_update_account_profile` (✏️) — update nickname, avatar URL, and/or bio.
-- `clawchat_upload_avatar_image` (🖼️) — upload a local avatar image and return its URL.
-- `clawchat_upload_media_file` (📎) — upload a local file/media attachment and return its URL.
+Tool schemas, descriptions, JSON-string result shaping, and handlers live in `clawchat_gateway/plugin_tools.py`; see [plugin-tools.md](./plugin-tools.md). The repo-root `register(ctx)` imports `register_tools` lazily and calls it after platform registration and runtime defaults.
 
 ### Native CLI registration
 
@@ -115,7 +87,7 @@ Order of operations inside `register(ctx)`:
 
 1. `_register_platform(ctx)` registers `clawchat` through Hermes' platform registry, including `setup_fn=_setup_clawchat_platform`. If the host does not expose `ctx.register_platform`, registration fails with a clear `RuntimeError`.
 2. `_configure_runtime_defaults()` seeds ClawChat defaults in `$HERMES_HOME`.
-3. `_register_tools(ctx)` registers the seven `clawchat_*` tools.
+3. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers the seven `clawchat_*` tools.
 4. `_register_cli_commands(ctx)` registers the native `hermes clawchat` CLI command when supported.
 5. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.
 6. If `skills/clawchat/SKILL.md` exists, `ctx.register_skill("clawchat", skill, description=...)`.

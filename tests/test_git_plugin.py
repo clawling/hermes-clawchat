@@ -71,8 +71,9 @@ def test_git_plugin_registers_tools_and_skill(monkeypatch):
 
 
 def test_git_plugin_handlers_accept_task_id(monkeypatch):
-    module = _load_root_plugin()
+    _load_root_plugin()
 
+    from clawchat_gateway import plugin_tools
     from clawchat_gateway import tools
 
     async def fake_update_account_profile(nickname=None, avatar_url=None, bio=None):
@@ -81,7 +82,7 @@ def test_git_plugin_handlers_accept_task_id(monkeypatch):
     monkeypatch.setattr(tools, "update_account_profile", fake_update_account_profile)
 
     result = asyncio.run(
-        module._handle_clawchat_update_account_profile(
+        plugin_tools.handle_clawchat_update_account_profile(
             {"nickname": "bot", "avatar_url": "https://cdn/avatar.png", "bio": "hi"},
             task_id="trace-123",
         )
@@ -93,7 +94,7 @@ def test_git_plugin_handlers_accept_task_id(monkeypatch):
 
 
 def test_clawchat_activate_handler_uses_shared_activation_runner(monkeypatch):
-    module = _load_root_plugin()
+    _load_root_plugin()
     called = []
 
     async def fake_runner(code: str, *, base_url: str, restart: bool):
@@ -103,9 +104,10 @@ def test_clawchat_activate_handler_uses_shared_activation_runner(monkeypatch):
     import clawchat_gateway.activate as activate_mod
 
     monkeypatch.setattr(activate_mod, "activate_and_maybe_restart", fake_runner)
+    from clawchat_gateway import plugin_tools
 
     result = asyncio.run(
-        module._handle_clawchat_activate(
+        plugin_tools.handle_clawchat_activate(
             {"code": "ABC123", "baseUrl": "https://chat.example"},
             task_id="trace-activate",
         )

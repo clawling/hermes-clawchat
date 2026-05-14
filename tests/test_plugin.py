@@ -222,6 +222,15 @@ def test_plugin_registers_all_tools(monkeypatch):
     assert all(ctx.tools[name]["is_async"] is True for name in ctx.tools)
 
 
+def test_plugin_tool_registration_is_delegated_to_gateway_module():
+    module = _load_plugin_module()
+
+    from clawchat_gateway import plugin_tools
+
+    assert callable(plugin_tools.register_tools)
+    assert not hasattr(module, "_register_tools")
+
+
 def test_plugin_registers_native_clawchat_cli_command(monkeypatch):
     module = _load_plugin_module()
     ctx = _PlatformCtx()
@@ -283,8 +292,9 @@ def test_clawchat_skill_distinguishes_media_delivery_from_media_link_uploads():
 
 
 def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
-    module = _load_plugin_module()
+    _load_plugin_module()
 
+    from clawchat_gateway import plugin_tools
     from clawchat_gateway import tools
 
     async def fake_get_account_profile():
@@ -292,7 +302,9 @@ def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
 
     monkeypatch.setattr(tools, "get_account_profile", fake_get_account_profile)
 
-    result = asyncio.run(module._handle_clawchat_get_account_profile({}, task_id="trace-123"))
+    result = asyncio.run(
+        plugin_tools.handle_clawchat_get_account_profile({}, task_id="trace-123")
+    )
 
     assert isinstance(result, str)
     assert "测试账号" in result

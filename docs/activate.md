@@ -101,7 +101,7 @@ When `restart=False`, the persisted activation result still contains `restart_re
 
 | Entrypoint | Restart behavior | Notes |
 |---|---|---|
-| `clawchat_activate` tool (`_handle_clawchat_activate` in `__init__.py`) | Always calls `activate_and_maybe_restart(..., restart=True)`. | Returns a Hermes v0.12-compatible JSON string. Converts exceptions to `_tool_error`. |
+| `clawchat_activate` tool (`handle_clawchat_activate` in `clawchat_gateway/plugin_tools.py`) | Always calls `activate_and_maybe_restart(..., restart=True)`. | Returns a Hermes v0.12-compatible JSON string. Converts exceptions to `_tool_error`. |
 | `hermes clawchat activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Preferred scriptable Hermes-native flow. Registered by `ctx.register_cli_command`. |
 | `hermes gateway setup` | Calls `activate_and_maybe_restart(..., restart=False)`. | Preferred interactive flow. The setup hook tells the user that Hermes gateway setup will handle the final service step after finishing. |
 | `python -m clawchat_gateway.activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Standalone module CLI for development and direct module execution; install docs use the native Hermes CLI. |
@@ -122,7 +122,7 @@ Runs `asyncio.run(activate_and_maybe_restart(...))`. On success (and unless `--n
 2. Augments the printed payload with `restart_scheduled: True`, `restart_delay_seconds: 2`, `restart_command: <resolved sh -lc string>`, and `restart_message: "ClawChat activation is saved. Hermes restart has been scheduled in the background."`.
 3. Pretty-prints the payload (`ensure_ascii=False, indent=2`) and exits 0.
 
-API errors bubble up as exceptions (no try/except wrapper in `main`), so the CLI crashes with a traceback on transport / auth failure. The Hermes tool handler `_handle_clawchat_activate` catches these and converts them to a `_tool_error` envelope.
+API errors bubble up as exceptions (no try/except wrapper in `main`), so the CLI crashes with a traceback on transport / auth failure. The Hermes tool handler `handle_clawchat_activate` catches these and converts them to a `_tool_error` envelope.
 
 ## Native Hermes CLI — `hermes clawchat activate CODE`
 
