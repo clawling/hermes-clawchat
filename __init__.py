@@ -53,6 +53,12 @@ def _install_gateway() -> None:
     _refresh_gateway_module_cache()
 
 
+def _setup_clawchat_platform() -> None:
+    from clawchat_gateway.setup import setup_clawchat_platform
+
+    setup_clawchat_platform()
+
+
 _GATEWAY_MODULES_TO_REFRESH = (
     "gateway.config",
     "gateway.run",
@@ -216,6 +222,7 @@ def _register_platform(ctx) -> bool:
         name="clawchat",
         label="ClawChat",
         adapter_factory=_create_clawchat_adapter,
+        setup_fn=_setup_clawchat_platform,
         check_fn=_check_clawchat_platform_requirements,
         validate_config=_validate_clawchat_platform_config,
         is_connected=_validate_clawchat_platform_config,

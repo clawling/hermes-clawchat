@@ -84,6 +84,7 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     assert platform["label"] == "ClawChat"
     assert callable(platform["adapter_factory"])
     assert callable(platform["check_fn"])
+    assert callable(platform["setup_fn"])
     assert callable(platform["validate_config"])
     assert callable(platform["is_connected"])
     assert platform["required_env"] == ["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"]
@@ -95,6 +96,27 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     assert "clawchat_upload_media_file" not in platform["platform_hint"]
     assert "clawchat_upload_avatar_image" not in platform["platform_hint"]
     assert "websocket" not in platform["platform_hint"].lower()
+
+
+def test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer(monkeypatch):
+    module = _load_plugin_module()
+    monkeypatch.setattr(
+        module,
+        "_install_gateway",
+        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
+    )
+    monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
+
+    from clawchat_gateway import setup
+
+    calls = []
+    monkeypatch.setattr(setup, "setup_clawchat_platform", lambda: calls.append("setup"))
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+    ctx.platforms["clawchat"]["setup_fn"]()
+
+    assert calls == ["setup"]
 
 
 def test_plugin_platform_check_only_verifies_dependencies(monkeypatch):
