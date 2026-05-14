@@ -129,7 +129,7 @@ def _derive_websocket_url(base_url: str) -> str:
     if parsed.netloc in {"company.newbaselab.com:19001", "company.newbaselab.com:10086"}:
         return DEFAULT_WEBSOCKET_URL
     scheme = "wss" if parsed.scheme == "https" else "ws"
-    return urlunparse((scheme, parsed.netloc, "/v1/ws", "", "", ""))
+    return urlunparse((scheme, parsed.netloc, "/ws", "", "", ""))
 
 
 def persist_activation(

@@ -12,7 +12,7 @@ This document describes the final wire contract implemented in this repository.
 - **`chat_type` is server-stamped on downlinks only.** Wire values: `"direct"` (DM) or `"group"`. Uplink frames MUST omit `chat_type`; any client-supplied value is ignored and overwritten. Adapters reject any other downlink value.
 - Envelope-top-level `to` is preserved end-to-end for UI context (e.g. which conversation row to render the message under) but is NOT used by the server for routing. Clients MAY omit it.
 - Routed server-originated business events use envelope-top-level `sender`.
-- Transport authentication is handled by the WebSocket `Authorization: Bearer <token>` header and the `bearer.<token>` subprotocol. JSON auth handshake events are not part of this adapter contract.
+- Transport authentication starts with the WebSocket `Authorization: Bearer <token>` header and the `bearer.<token>` subprotocol. The current NewBase `/ws` endpoint also sends `connect.challenge`; clients answer with a signed `connect` frame and wait for `hello-ok` before sending business events.
 - `X-Device-Id` identifies the client device for multi-device delivery.
 - All clients use device-level replay.
 - `to.type` and `sender.type` only allow `direct` or `group`.
@@ -511,11 +511,15 @@ offline store keep one durable completed-stream row.
 
 ## Connection Authentication
 
-Every WebSocket session authenticates during the HTTP upgrade. The adapter sends
+Every WebSocket session starts authentication during the HTTP upgrade. The adapter sends
 `Authorization: Bearer <token>`, `X-Device-Id: <stable-device-id>`, and
-subprotocols `clawchat.v1` plus `bearer.<token>`. A socket accepted by the
-server is immediately ready for business events; the adapter does not send or
-wait for JSON auth frames.
+subprotocols `clawchat.v1` plus `bearer.<token>`.
+
+For the current NewBase `/ws` endpoint, the server then sends
+`connect.challenge` with a nonce. The adapter replies with `connect`, including
+the token, client metadata, device id, nonce, and
+`HMAC-SHA256(token, f"{client_id}|{nonce}")` as `sign`. The connection becomes
+ready only after a matching `hello-ok`.
 
 ## Device Replay
 

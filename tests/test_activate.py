@@ -88,7 +88,7 @@ def test_persist_activation_removes_stale_config_secrets_and_refresh_env(
     assert "token" not in extra
     assert "refresh_token" not in extra
     assert extra["user_id"] == "agent-2"
-    assert extra["websocket_url"] == "wss://chat.example/v1/ws"
+    assert extra["websocket_url"] == "wss://chat.example/ws"
 
 
 def test_persist_activation_uses_hermes_config_helpers_when_available(
@@ -151,7 +151,7 @@ def test_activate_and_maybe_restart_schedules_restart(monkeypatch, tmp_path: Pat
             "env_path": str(hermes_home / ".env"),
             "user_id": "agent-1",
             "base_url": base_url,
-            "websocket_url": "wss://chat.example/v1/ws",
+            "websocket_url": "wss://chat.example/ws",
             "token": "***",
             "refresh_token": "***",
             "restart_required": True,
@@ -195,7 +195,7 @@ def test_activate_and_maybe_restart_can_skip_restart(monkeypatch, tmp_path: Path
             "env_path": str(hermes_home / ".env"),
             "user_id": "agent-1",
             "base_url": base_url,
-            "websocket_url": "wss://chat.example/v1/ws",
+            "websocket_url": "wss://chat.example/ws",
             "token": "***",
             "refresh_token": None,
             "restart_required": True,

@@ -16,14 +16,22 @@ except ImportError:  # pragma: no cover
 
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.protocol import (
+    build_connect_request,
+    compute_client_sign,
     decode_frame,
     encode_frame,
+    extract_nonce,
+    is_hello_ok,
+    new_frame_id,
 )
 from clawchat_gateway.device_id import get_device_id
 
 logger = logging.getLogger("clawchat_gateway.connection")
 
+HANDSHAKE_TIMEOUT_SECONDS = 10.0
 SEND_QUEUE_MAX = 128
+CLIENT_ID = "hermes-agent"
+CLIENT_VERSION = "hermes-clawchat/0.1"
 BACKOFF_RESET_AFTER_SECONDS = 5.0
 
 
@@ -36,6 +44,7 @@ async def _ws_connect(url: str, **kwargs: Any) -> Any:
 class ConnectionState(str, enum.Enum):
     DISCONNECTED = "disconnected"
     CONNECTING = "connecting"
+    HANDSHAKING = "handshaking"
     READY = "ready"
     RECONNECTING = "reconnecting"
     CLOSED = "closed"
@@ -61,6 +70,8 @@ class ClawChatConnection:
         self._stopping = False
         self._supervisor_task: asyncio.Task[None] | None = None
         self._read_task: asyncio.Task[None] | None = None
+        self._hello_wait: asyncio.Future[bool] | None = None
+        self._pending_connect_id: str | None = None
         self._send_queue: deque[str] = deque()
         self._flushing_send_queue = False
 
@@ -78,6 +89,8 @@ class ClawChatConnection:
         await self._set_state(ConnectionState.CLOSED)
         if self._read_task is not None:
             self._read_task.cancel()
+        if self._hello_wait is not None and not self._hello_wait.done():
+            self._hello_wait.cancel()
         if self._ws is not None:
             try:
                 await self._ws.close()
@@ -188,12 +201,19 @@ class ClawChatConnection:
             ping_timeout=self._cfg.heartbeat_timeout_ms / 1000.0,
         )
         self._ws = ws
+        self._pending_connect_id = None
         ready_started_at: float | None = None
-        await self._set_state(ConnectionState.READY)
+        await self._set_state(ConnectionState.HANDSHAKING)
 
         loop = asyncio.get_running_loop()
+        self._hello_wait = loop.create_future()
         self._read_task = asyncio.create_task(self._read_loop(ws), name="clawchat-read")
         try:
+            await asyncio.wait_for(
+                self._hello_wait,
+                timeout=HANDSHAKE_TIMEOUT_SECONDS,
+            )
+            await self._set_state(ConnectionState.READY)
             ready_started_at = loop.time()
             await self._flush_send_queue(ws)
             await self._read_task
@@ -251,6 +271,21 @@ class ClawChatConnection:
 
     async def _dispatch_inbound(self, frame: dict[str, Any]) -> None:
         ftype = frame.get("type")
+        if (
+            self._state == ConnectionState.HANDSHAKING
+            and ftype in (None, "event")
+            and frame.get("event") == "connect.challenge"
+        ):
+            await self._handle_challenge(frame)
+            return
+        if (
+            self._state == ConnectionState.HANDSHAKING
+            and (ftype == "res" or frame.get("event") in {"hello-ok", "hello-fail"})
+            and self._hello_wait is not None
+            and not self._hello_wait.done()
+        ):
+            await self._maybe_finish_handshake(frame)
+            return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply", "interaction.submit"}:
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
@@ -284,6 +319,40 @@ class ClawChatConnection:
             frame.get("event"),
             ftype,
             self._state.value,
+        )
+
+    async def _handle_challenge(self, frame: dict[str, Any]) -> None:
+        nonce = extract_nonce(frame)
+        if not nonce:
+            logger.warning("clawchat ws challenge missing nonce")
+            return
+        req_id = new_frame_id("trace")
+        self._pending_connect_id = req_id
+        sign = compute_client_sign(CLIENT_ID, nonce, self._cfg.token)
+        connect_req = build_connect_request(
+            frame_id=req_id,
+            token=self._cfg.token,
+            client_id=CLIENT_ID,
+            client_version=CLIENT_VERSION,
+            sign=sign,
+            device_id=get_device_id(),
+            capabilities={"protocol": "clawchat.v2"},
+        )
+        connect_req["payload"]["nonce"] = nonce
+        logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)
+        await self._ws.send(encode_frame(connect_req))
+
+    async def _maybe_finish_handshake(self, frame: dict[str, Any]) -> None:
+        if self._pending_connect_id and is_hello_ok(frame, self._pending_connect_id):
+            if self._hello_wait is not None and not self._hello_wait.done():
+                logger.info("clawchat ws handshake complete id=%s", self._pending_connect_id)
+                self._hello_wait.set_result(True)
+            return
+        logger.warning(
+            "clawchat ws handshake response ignored event=%s trace_id=%s pending_id=%s",
+            frame.get("event"),
+            frame.get("trace_id"),
+            self._pending_connect_id,
         )
 
     def _enqueue_text(self, text: str, *, front: bool = False) -> None:

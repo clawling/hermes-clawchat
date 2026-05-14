@@ -90,12 +90,12 @@ Uses a local `BaseHTTPRequestHandler` fixture (`api_server`) to verify:
 
 Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exercises the full state machine:
 
-- Realtime connections become `READY` without sending a JSON `connect` frame.
-- `connect.challenge` frames are ignored.
-- `message.send` dispatches after realtime connect.
+- Connections answer `connect.challenge` with a signed `connect` frame and wait for `hello-ok` before `READY`.
+- `connect.challenge` frames are ignored after the connection is already `READY`.
+- `message.send` dispatches after the challenge handshake.
 - Bearer auth header is present on connect.
 - Correct subprotocols are sent.
-- `hello-fail` frames do not affect an already-ready realtime connection.
+- `hello-fail` frames do not affect an already-ready connection.
 - Outbound frames queued before `READY` flush in order after `READY`.
 - Connection logs receive / dispatch / send at the info level.
 - Queued frames survive a failed flush + reconnect.

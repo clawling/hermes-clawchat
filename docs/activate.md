@@ -15,7 +15,7 @@ Exposed as a Python API, a shared activation-and-restart helper, a native Hermes
 | `_env_path` | `() -> Path` | Prefer `hermes_cli.config.get_env_path()`; fallback returns `$HERMES_HOME/.env`. |
 | `_validate_env_value` | `(key: str, value: str) -> str` | Reject `\n` / `\r` in `.env` values to keep the line-based format intact. Raises `ValueError` when invalid; returns `value` otherwise. |
 | `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Prefer `hermes_cli.config.save_env_value` / `remove_env_value`; fallback upserts selected `KEY=value` lines in `.env`, preserves unrelated lines, and removes keys whose value is `None`. Each fallback non-`None` value goes through `_validate_env_value`. |
-| `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/v1/ws`. |
+| `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/ws`. |
 
 ## `persist_activation`
 

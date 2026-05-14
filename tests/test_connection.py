@@ -11,7 +11,7 @@ from tests.fake_ws import FakeClawChatServer
 
 def _cfg(**overrides) -> ClawChatConfig:
     base = dict(
-        websocket_url="ws://fake/v1/ws",
+        websocket_url="ws://fake/ws",
         token="tok",
         user_id="bot",
         reconnect_initial_delay_ms=10,
@@ -38,12 +38,78 @@ async def _wait_for_connect(srv: FakeClawChatServer, *, count: int = 1):
     await _wait_until(lambda: len(srv.connect_calls) >= count)
 
 
-async def _wait_for_ready(conn: ClawChatConnection, srv: FakeClawChatServer) -> None:
+async def _complete_handshake(srv: FakeClawChatServer) -> dict:
     await _wait_for_connect(srv)
+    srv.enqueue_from_server(
+        {
+            "version": "2",
+            "event": "connect.challenge",
+            "trace_id": "challenge",
+            "payload": {"nonce": "N"},
+        }
+    )
+    req = await srv.read_client_frame(timeout=1.0)
+    srv.enqueue_from_server(
+        {
+            "version": "2",
+            "event": "hello-ok",
+            "trace_id": req["trace_id"],
+            "payload": {},
+        }
+    )
+    return req
+
+
+async def _wait_for_ready(conn: ClawChatConnection, srv: FakeClawChatServer) -> None:
+    await _complete_handshake(srv)
     await _wait_until(lambda: conn.is_ready)
 
 
-async def test_realtime_connection_reaches_ready_without_connect_frame(monkeypatch):
+async def test_challenge_endpoint_sends_connect_before_ready(monkeypatch):
+    srv = FakeClawChatServer()
+    monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
+    monkeypatch.setattr("clawchat_gateway.connection.get_device_id", lambda: "hermes-test-device")
+
+    async def on_message(_frame):
+        pass
+
+    conn = ClawChatConnection(
+        _cfg(websocket_url="ws://company.newbaselab.com:10086/ws"),
+        on_message=on_message,
+    )
+    await conn.start()
+    try:
+        await _wait_for_connect(srv)
+        assert conn.is_ready is False
+
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "connect.challenge",
+                "trace_id": "challenge",
+                "payload": {"nonce": "N"},
+            }
+        )
+        req = await srv.read_client_frame(timeout=1.0)
+        assert req["event"] == "connect"
+        assert req["payload"]["device_id"] == "hermes-test-device"
+        assert req["payload"]["nonce"] == "N"
+        assert conn.is_ready is False
+
+        srv.enqueue_from_server(
+            {
+                "version": "2",
+                "event": "hello-ok",
+                "trace_id": req["trace_id"],
+                "payload": {},
+            }
+        )
+        await _wait_until(lambda: conn.is_ready)
+    finally:
+        await conn.stop()
+
+
+async def test_connection_reaches_ready_after_challenge_handshake(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     seen = []
@@ -61,11 +127,11 @@ async def test_realtime_connection_reaches_ready_without_connect_frame(monkeypat
     )
     await conn.start()
     try:
-        await _wait_for_ready(conn, srv)
+        req = await _complete_handshake(srv)
+        assert req["event"] == "connect"
+        await _wait_until(lambda: conn.is_ready)
         assert conn.is_ready is True
         assert "ready" in [s.value for s in seen]
-        with pytest.raises(asyncio.TimeoutError):
-            await srv.read_client_frame(timeout=0.05)
     finally:
         await conn.stop()
 
@@ -96,7 +162,7 @@ async def test_challenge_frames_are_ignored(monkeypatch):
         await conn.stop()
 
 
-async def test_message_send_dispatches_after_realtime_connect(monkeypatch):
+async def test_message_send_dispatches_after_handshake(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     seen_messages = []
@@ -147,7 +213,7 @@ async def test_bearer_auth_header_is_sent_on_connect(monkeypatch):
         await conn.stop()
 
 
-async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
+async def test_subprotocol_headers_are_sent_on_connect(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     monkeypatch.setattr("clawchat_gateway.connection.get_device_id", lambda: "hermes-test-device")
@@ -167,7 +233,7 @@ async def test_realtime_subprotocol_headers_are_sent_on_connect(monkeypatch):
         await conn.stop()
 
 
-async def test_realtime_connect_sends_device_header_not_connect_payload(monkeypatch):
+async def test_challenge_connect_sends_device_header_and_payload(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     monkeypatch.setattr("clawchat_gateway.connection.get_device_id", lambda: "hermes-test-device")
@@ -178,16 +244,16 @@ async def test_realtime_connect_sends_device_header_not_connect_payload(monkeypa
     conn = ClawChatConnection(_cfg(), on_message=on_message)
     await conn.start()
     try:
-        await _wait_for_ready(conn, srv)
+        req = await _complete_handshake(srv)
         headers = srv.connect_calls[0]["kwargs"].get("additional_headers") or {}
         assert headers["X-Device-Id"] == "hermes-test-device"
-        with pytest.raises(asyncio.TimeoutError):
-            await srv.read_client_frame(timeout=0.05)
+        assert req["payload"]["device_id"] == "hermes-test-device"
+        assert req["payload"]["capabilities"] == {"protocol": "clawchat.v2"}
     finally:
         await conn.stop()
 
 
-async def test_rich_interactions_do_not_reintroduce_connect_payload(monkeypatch):
+async def test_rich_interactions_preserve_challenge_handshake(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
 
@@ -200,14 +266,14 @@ async def test_rich_interactions_do_not_reintroduce_connect_payload(monkeypatch)
     )
     await conn.start()
     try:
-        await _wait_for_ready(conn, srv)
-        with pytest.raises(asyncio.TimeoutError):
-            await srv.read_client_frame(timeout=0.05)
+        req = await _complete_handshake(srv)
+        assert req["event"] == "connect"
+        await _wait_until(lambda: conn.is_ready)
     finally:
         await conn.stop()
 
 
-async def test_hello_fail_frame_does_not_affect_realtime_ready_connection(monkeypatch):
+async def test_hello_fail_frame_does_not_affect_ready_connection(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
     seen_states = []
@@ -363,7 +429,7 @@ async def test_ready_dispatches_interaction_submit(monkeypatch):
         await conn.stop()
 
 
-async def test_queued_frames_flush_in_order_on_realtime_connect(monkeypatch):
+async def test_queued_frames_flush_in_order_after_handshake(monkeypatch):
     srv = FakeClawChatServer()
     monkeypatch.setattr("clawchat_gateway.connection._ws_connect", srv.connect)
 
@@ -396,7 +462,7 @@ async def test_queued_frame_survives_failed_flush_and_reconnect(monkeypatch):
 
         async def flaky_send(text: str):
             nonlocal failed
-            if not failed:
+            if '"event":"connect"' not in text and not failed:
                 failed = True
                 raise ConnectionError("flush failed")
             await real_send(text)
@@ -414,6 +480,7 @@ async def test_queued_frame_survives_failed_flush_and_reconnect(monkeypatch):
     await conn.send_frame({"type": "event", "id": "queued-1", "event": "message.reply"})
     await conn.start()
     try:
+        await _complete_handshake(srv)
         await _wait_until(lambda: len(srv.connect_calls) >= 2, timeout=0.3)
         await _wait_for_ready(conn, srv)
         replayed = await srv.read_client_frame(timeout=1.0)
@@ -510,6 +577,7 @@ async def test_backoff_progresses_for_flapping_ready_connections(monkeypatch):
     try:
         for ready_count in range(2):
             await _wait_until(lambda: len(srv.connect_calls) > ready_count, sleep=real_sleep)
+            await _complete_handshake(srv)
             await _wait_until(
                 lambda: seen_states.count(ConnectionState.READY) > ready_count,
                 sleep=real_sleep,
