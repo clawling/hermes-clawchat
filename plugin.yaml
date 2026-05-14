@@ -1,7 +1,7 @@
 manifest_version: 1
 name: clawchat
 kind: platform
-version: 0.1.0
+version: 0.4.0
 description: "ClawChat gateway integration for Hermes Agent."
 author: NewBase
 requires_env:
