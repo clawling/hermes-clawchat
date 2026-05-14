@@ -9,8 +9,6 @@ WebSocket lifecycle: supervisor with exponential backoff, WebSocket authenticati
 | `_ws_connect_impl` | `websockets.asyncio.client.connect` or `None` | Import is soft-failed; `_ws_connect` raises `RuntimeError("websockets library not available")` if absent. Tests monkeypatch this. |
 | `HANDSHAKE_TIMEOUT_SECONDS` | `10.0` | Max wait for `hello-ok` after sending `connect` on challenge-based endpoints. |
 | `SEND_QUEUE_MAX` | `128` | Max buffered frames when disconnected. Full queue drops the oldest (or the just-requeued item when `front=True`). |
-| `CLIENT_ID` | `"hermes-agent"` | Included in the challenge response payload and HMAC input. |
-| `CLIENT_VERSION` | `"hermes-clawchat/0.1"` | Included in the challenge response payload. |
 | `BACKOFF_RESET_AFTER_SECONDS` | `5.0` | If a connection stays `READY` for at least this long, reset backoff + retry counter. |
 
 ## Helpers
@@ -73,7 +71,7 @@ Final state is `CLOSED`.
 `async _run_one_connection() -> bool` —
 
 1. Open the WebSocket with headers `Authorization: Bearer <token>`, `X-Device-Id: <device_id>`, subprotocols `["clawchat.v1", f"bearer.{token}"]`, `ping_interval` and `ping_timeout` from config.
-2. Transition to `HANDSHAKING`, answer `connect.challenge` with a signed `connect` frame, and wait for matching `hello-ok`.
+2. Transition to `HANDSHAKING`, answer `connect.challenge` with the msghub `ConnectPayload`, and wait for matching `hello-ok`.
 3. Record `ready_started_at`, `_flush_send_queue(ws)`, then `await self._read_task` (idle until the server disconnects).
 4. `finally` branch: cancel read task, close ws.
 5. Return `True` iff session stayed `READY` for at least `BACKOFF_RESET_AFTER_SECONDS`.
@@ -82,7 +80,7 @@ Final state is `CLOSED`.
 
 | Method | Purpose |
 |---|---|
-| `async _handle_challenge(frame)` | Extract `nonce`, compute `sign = HMAC-SHA256(token, f"{client_id}|{nonce}")`, build a `connect` request, echo the nonce, and send it. |
+| `async _handle_challenge(frame)` | Extract the challenge nonce, build a `connect` request with token, nonce, stable device id, and `{multi_device, device_replay}` capabilities, and send it. |
 | `async _maybe_finish_handshake(frame)` | Resolve the hello-wait future only when the `hello-ok` response matches the pending `connect` trace id. |
 
 ### Send queue

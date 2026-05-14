@@ -12,6 +12,16 @@ For the wire-protocol semantics (event names, payload field meanings, error code
 | `decode_frame` | `(text: str) -> dict` | `json.loads`; raises `ValueError("frame must be object")` if the parsed value is not a dict. |
 | `new_frame_id` | `(prefix: str = "req") -> str` | `f"{prefix}-{uuid4()}"`. Used for `trace_id` on outbound frames. |
 
+## Connect handshake
+
+`build_connect_request(frame_id, token, nonce, device_id=None, capabilities=None)`
+builds the msghub-compatible `connect` frame used after
+`connect.challenge`. Its payload contains token, nonce, optional device id,
+and optional capabilities. Hermes passes `{multi_device: true,
+device_replay: true}` so missed-message replay arrives as ordinary downlink
+envelopes after `hello-ok`; legacy `offline.batch`, `offline.ack`, and
+`offline.done` are compatibility events only.
+
 ## Message envelope
 
 `_message_envelope(event, *, chat_id, chat_type, payload)` is the shared inner helper. All `message.*` and `typing.*` builders go through it and produce frames of shape:

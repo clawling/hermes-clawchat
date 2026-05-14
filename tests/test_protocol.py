@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from clawchat_gateway.protocol import (
+    build_connect_request,
     build_message_add_event,
     build_message_created_event,
     build_message_done_event,
@@ -18,6 +19,32 @@ def _assert_prefixed_uuid(value: str, prefix: str) -> None:
 
 def test_new_frame_id_uses_prefixed_uuid():
     _assert_prefixed_uuid(new_frame_id("trace"), "trace")
+
+
+def test_build_connect_request_uses_msghub_payload_without_signature_fields():
+    frame = build_connect_request(
+        frame_id="trace-1",
+        token="tok",
+        nonce="nonce-1",
+        device_id="device-1",
+        capabilities={"multi_device": True, "device_replay": True},
+    )
+
+    assert frame == {
+        "version": "2",
+        "event": "connect",
+        "trace_id": "trace-1",
+        "payload": {
+            "token": "tok",
+            "nonce": "nonce-1",
+            "device_id": "device-1",
+            "capabilities": {"multi_device": True, "device_replay": True},
+        },
+    }
+    assert "sign" not in frame["payload"]
+    assert "signature" not in frame["payload"]
+    assert "client_id" not in frame["payload"]
+    assert "client_version" not in frame["payload"]
 
 
 def test_client_originated_business_frames_omit_root_chat_type_and_sender():
@@ -130,4 +157,3 @@ def test_build_typing_update_event():
     assert env["chat_id"] == "c1"
     assert "chat_type" not in env
     assert env["payload"]["is_typing"] is True
-

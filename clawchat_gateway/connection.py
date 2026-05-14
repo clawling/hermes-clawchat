@@ -17,7 +17,6 @@ except ImportError:  # pragma: no cover
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.protocol import (
     build_connect_request,
-    compute_client_sign,
     decode_frame,
     encode_frame,
     extract_nonce,
@@ -30,8 +29,6 @@ logger = logging.getLogger("clawchat_gateway.connection")
 
 HANDSHAKE_TIMEOUT_SECONDS = 10.0
 SEND_QUEUE_MAX = 128
-CLIENT_ID = "hermes-agent"
-CLIENT_VERSION = "hermes-clawchat/0.1"
 BACKOFF_RESET_AFTER_SECONDS = 5.0
 
 
@@ -328,17 +325,13 @@ class ClawChatConnection:
             return
         req_id = new_frame_id("trace")
         self._pending_connect_id = req_id
-        sign = compute_client_sign(CLIENT_ID, nonce, self._cfg.token)
         connect_req = build_connect_request(
             frame_id=req_id,
             token=self._cfg.token,
-            client_id=CLIENT_ID,
-            client_version=CLIENT_VERSION,
-            sign=sign,
+            nonce=nonce,
             device_id=get_device_id(),
-            capabilities={"protocol": "clawchat.v2"},
+            capabilities={"multi_device": True, "device_replay": True},
         )
-        connect_req["payload"]["nonce"] = nonce
         logger.info("clawchat ws handshake challenge received; sending connect id=%s", req_id)
         await self._ws.send(encode_frame(connect_req))
 

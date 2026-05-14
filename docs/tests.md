@@ -96,7 +96,7 @@ Uses a local `BaseHTTPRequestHandler` fixture (`api_server`) to verify:
 
 Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exercises the full state machine:
 
-- Connections answer `connect.challenge` with a signed `connect` frame and wait for `hello-ok` before `READY`.
+- Connections answer `connect.challenge` with the msghub `ConnectPayload` and wait for `hello-ok` before `READY`.
 - `connect.challenge` frames are ignored after the connection is already `READY`.
 - `message.send` dispatches after the challenge handshake.
 - Bearer auth header is present on connect.
