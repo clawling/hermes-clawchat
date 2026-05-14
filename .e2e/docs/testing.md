@@ -30,6 +30,7 @@ scripts, fixtures, docs, and `.env.example` are checked in.
 | Path | Purpose |
 |------|---------|
 | `local_start_test.sh` | Driver. Pulls a one-time connect code from the ClawChat REST API, seeds a fresh Hermes data dir, and runs `nousresearch/hermes-agent chat` in Docker so an LLM-driven turn installs + activates the plugin end-to-end. |
+| `npm_start_test.sh` | Driver variant that uses the published npm `@newbase-clawchat/clawchat-cli` install flow from the ClawChat install guide instead of staging this checkout and calling `hermes plugins install file:///tmp/hermes-clawchat`. |
 | `.env.example` | Template for `.env`. Holds the user JWT used to mint connect codes. Copy to `.e2e/.env` and fill in. |
 | `.env` | Local secrets (JWT). Gitignored. |
 | `dev_install.md` | Install instructions consumed by the agent during the test. Mounted into the container at `/opt/dev_install.md` and read with `execute_code`. |
@@ -86,7 +87,14 @@ From the repo root:
 bash .e2e/local_start_test.sh
 ```
 
-What happens, in order:
+To test the current npm CLI installer path instead of the local staged
+checkout path, run:
+
+```bash
+bash .e2e/npm_start_test.sh
+```
+
+For `local_start_test.sh`, what happens, in order:
 
 1. Loads `JWT` from `.e2e/.env` (or the file pointed to by
    `ENV_FILE=...`). Adds the `Bearer ` prefix if missing.
@@ -116,9 +124,18 @@ What happens, in order:
    The chat prompt hands the agent the one-time connect code and
    tells it to follow `/opt/dev_install.md`. From there the agent
    removes any existing `clawchat` plugin, drives
-   `hermes plugins install file:///tmp/hermes-clawchat`, runs
-   `python -m clawchat_gateway.activate <CODE>`, and dispatches the
-   gateway restart — all inside the container.
+   `hermes plugins install file:///tmp/hermes-clawchat --enable`, runs
+   `hermes clawchat activate <CODE>`, and lets the native command schedule
+   the gateway reload — all inside the container.
+
+`npm_start_test.sh` follows the same credential, connect-code, and
+fresh-data setup steps, then prompts the in-container agent to install
+`@newbase-clawchat/clawchat-cli` with npm and use `clawchat install
+--target hermes`, `clawchat call activate --target hermes`, `hermes
+gateway restart`, and `clawchat call get_account_profile --target
+hermes`. It intentionally does not mount `dev_install.md` or
+`tmp/hermes-clawchat/`, because that path exercises the published CLI
+installer rather than local source staging.
 
 After the agent exits, the resulting `.e2e/tmp/hermes_data/` is the
 post-install snapshot (look at `config.yaml`, `.env`,

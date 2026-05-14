@@ -104,7 +104,7 @@ When `restart=False`, the persisted activation result still contains `restart_re
 | `clawchat_activate` tool (`_handle_clawchat_activate` in `__init__.py`) | Always calls `activate_and_maybe_restart(..., restart=True)`. | Returns a Hermes v0.12-compatible JSON string. Converts exceptions to `_tool_error`. |
 | `hermes clawchat activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Preferred scriptable Hermes-native flow. Registered by `ctx.register_cli_command`. |
 | `hermes gateway setup` | Calls `activate_and_maybe_restart(..., restart=False)`. | Preferred interactive flow. The setup hook tells the user that Hermes gateway setup will handle the final service step after finishing. |
-| `python -m clawchat_gateway.activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Fallback when the native plugin CLI command is unavailable. |
+| `python -m clawchat_gateway.activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Standalone module CLI for development and direct module execution; install docs use the native Hermes CLI. |
 
 ## CLI — `main(argv=None) -> int`
 

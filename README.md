@@ -71,15 +71,6 @@ hermes clawchat activate <CODE>
 
 That command writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env`, stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`, and schedules `hermes gateway restart` so the gateway reloads the enabled platform and credentials.
 
-If the native plugin CLI command is unavailable, fall back to the module CLI from the installed plugin source:
-
-```bash
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-PLUGIN_DIR="$HERMES_HOME/plugins/clawchat"
-PYTHONPATH="$PLUGIN_DIR:${PYTHONPATH:-}" \
-python -m clawchat_gateway.activate <CODE>
-```
-
 Group chats default to `group_mode: all`, so every inbound group message is eligible for a reply. Set `CLAWCHAT_GROUP_MODE=mention` or `platforms.clawchat.extra.group_mode: mention` to require an @mention. Group-only covenant guidance is injected through Hermes' per-event `channel_prompt`; direct chats do not receive that group covenant.
 
 For Docker:
