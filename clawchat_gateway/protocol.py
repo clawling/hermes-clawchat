@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import time
 import uuid
@@ -21,69 +19,6 @@ def decode_frame(text: str) -> dict[str, Any]:
     if not isinstance(obj, dict):
         raise ValueError("frame must be object")
     return obj
-
-
-def compute_client_sign(client_id: str, nonce: str, token: str) -> str:
-    return hmac.new(
-        token.encode("utf-8"),
-        f"{client_id}|{nonce}".encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-
-
-def extract_nonce(frame: dict[str, Any]) -> str | None:
-    payload = frame.get("payload")
-    if not isinstance(payload, dict):
-        return None
-    if isinstance(payload.get("nonce"), str):
-        return payload["nonce"]
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        return None
-    if isinstance(data.get("nonce"), str):
-        return data["nonce"]
-    return None
-
-
-def is_hello_ok(frame: dict[str, Any], expected_request_id: str) -> bool:
-    if frame.get("event") == "hello-ok":
-        return True
-    payload = frame.get("payload")
-    if not isinstance(payload, dict):
-        return False
-    return (
-        frame.get("type") == "res"
-        and frame.get("requestId") == expected_request_id
-        and payload.get("type") == "hello-ok"
-    )
-
-
-def build_connect_request(
-    *,
-    frame_id: str,
-    token: str,
-    client_id: str,
-    client_version: str,
-    sign: str,
-    device_id: str | None = None,
-    capabilities: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "token": token,
-        "client_id": client_id,
-        "client_version": client_version,
-        "sign": sign,
-    }
-    if device_id is not None:
-        payload["device_id"] = device_id
-    if capabilities is not None:
-        payload["capabilities"] = capabilities
-    return {
-        "version": "2",
-        "event": "connect",
-        "trace_id": frame_id,
-        "payload": payload,
-    }
 
 
 def _message_envelope(

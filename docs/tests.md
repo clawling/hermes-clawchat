@@ -90,15 +90,14 @@ Uses a local `BaseHTTPRequestHandler` fixture (`api_server`) to verify:
 
 Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exercises the full state machine:
 
-- Legacy handshake reaches `READY` (challenge → connect → hello-ok).
-- Realtime subprotocol (`/v1/ws`) skips the handshake.
-- `message.send` is ignored before `READY`.
+- Realtime connections become `READY` without sending a JSON `connect` frame.
+- `connect.challenge` frames are ignored.
+- `message.send` dispatches after realtime connect.
 - Bearer auth header is present on connect.
 - Correct subprotocols are sent.
-- Wrong `request_id` in hello-ok times out.
+- `hello-fail` frames do not affect an already-ready realtime connection.
 - Outbound frames queued before `READY` flush in order after `READY`.
 - Connection logs receive / dispatch / send at the info level.
-- Ready transition preserves queued frame ordering.
 - Queued frames survive a failed flush + reconnect.
 - A send failure while `READY` re-queues for the next connection.
 - Backoff progresses both for repeated `connect` failures and for flapping `READY` sessions shorter than `BACKOFF_RESET_AFTER_SECONDS`.
@@ -122,7 +121,7 @@ Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 Comprehensive registration / schema / behavior tests for the repo-root `__init__.py`. Defines a `_Ctx` (tools + skills + hooks) and a richer `_PlatformCtx` (adds `register_platform`). Coverage:
 
 - `test_plugin_registers_clawchat_platform_with_registry` — `register(ctx)` calls `ctx.register_platform("clawchat", ...)` with the expected label, callables (`adapter_factory`, `check_fn`, `validate_config`, `is_connected`), `required_env`, allowlist env names, and a platform hint that mentions `MEDIA:/absolute/local/path` and forbids `MEDIA:https://`.
-- `test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer` — the registered platform `setup_fn` delegates to `clawchat_gateway.setup.setup_clawchat_platform` without invoking the legacy installer.
+- `test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer` — the registered platform `setup_fn` delegates to `clawchat_gateway.setup.setup_clawchat_platform`.
 - `test_plugin_platform_check_only_verifies_dependencies` — the registered `check_fn` returns `True` when `_clawchat_dependencies_available` is True, **without** invoking `_clawchat_connection_configured` (separation of dependency check from credential validation).
 - `test_plugin_platform_validation_falls_back_to_home_config` — `validate_config(SimpleNamespace(extra={}))` returns `True` when the merged `$HERMES_HOME/config.yaml` supplies `websocket_url` and the `.env` supplies `CLAWCHAT_TOKEN`.
 - `test_plugin_adapter_factory_merges_home_config` — adapter factory merges `extra` from `$HERMES_HOME/config.yaml` so a sparse runtime config still produces a fully populated `ClawChatConfig`.
@@ -134,10 +133,11 @@ Comprehensive registration / schema / behavior tests for the repo-root `__init__
 - `test_plugin_tool_handlers_return_json_strings_for_hermes_v012` — `_handle_clawchat_get_account_profile` returns a JSON string (not a dict) because Hermes v0.12 expects strings; verifies UTF-8 round-trip.
 - `test_activate_schema_triggers_on_chinese_activation_code_phrase` — schema description and `code` parameter description both include the bilingual trigger phrasing the LLM uses to extract the code.
 - `test_plugin_upload_avatar_image_rejects_relative_path` — handler returns a `validation` error envelope for relative paths (without making any API calls).
+- `test_plugin_requires_platform_registry` — `register(ctx)` raises a clear error when the host lacks `ctx.register_platform`.
 
 ### `tests/test_plugin_manifest.py`
 
-Static check that `plugin.yaml` has `kind: platform` and `requires_env == ["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"]`. Catches manifest drift when the env-var contract changes.
+Static checks that `plugin.yaml` has `kind: platform`, `requires_env == ["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"]`, and `pyproject.toml` does not expose a legacy anchor-patch console script.
 
 ### `tests/test_e2e_install_docs.py`
 
@@ -166,15 +166,9 @@ Matrix of `parse_inbound_message` edge cases:
 - `message.body` as string, dict, and list of `{type, content}` fragments.
 - Truthy-but-non-dict `payload`, `message`, `context`, `sender` all return `None`.
 
-### `tests/test_install.py`
+### `tests/test_runtime_defaults.py`
 
-- `test_build_patches_contains_expected_ids` — the expected legacy patch ids are present.
-- `test_apply_and_remove_patch_with_indentation` — indentation is preserved and removal is idempotent.
-- `test_cli_platform_registry_patch_inserts_clawchat` — specific check for the CLI registry patch.
-- `test_install_state_round_trip` — state file write/read.
-- `test_install_and_uninstall_skill` — installs the skill, removes the legacy plugin dir, round-trips uninstall.
 - `configure_clawchat_allow_all` — writes + updates `$HERMES_HOME/.env`.
-- `clear_skills_prompt_snapshot`.
 - `configure_clawchat_streaming` — writes a full config.yaml skeleton with the expected defaults.
 
 ### `tests/test_media_runtime.py`
@@ -209,12 +203,8 @@ CLI and loader coverage:
 
 Frame-builder unit tests:
 
-- `compute_client_sign` outputs lower-hex.
 - `new_frame_id` uses the expected prefixed UUID shape.
-- `build_connect_request` emits the realtime `connect` event with token/client/sign.
 - `build_message_add_event` carries `full_text` and `delta`.
 - `build_message_done_event` matches the v2 streaming payload shape.
 - `build_message_reply_event` includes reply context when `reply_to_message_id` is present.
 - `build_typing_update_event` shape.
-- `extract_nonce` returns `None` for non-dict payload / non-dict `payload.data`; reads the nested data nonce.
-- `is_hello_ok` rejects non-dict payloads and wrong payload type; accepts the realtime event form.

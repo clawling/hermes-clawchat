@@ -11,6 +11,7 @@ class _Ctx:
         self.tools = {}
         self.skills = {}
         self.hooks = {}
+        self.platforms = {}
 
     def register_tool(self, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {
@@ -26,6 +27,14 @@ class _Ctx:
     def register_hook(self, name, handler):
         self.hooks.setdefault(name, []).append(handler)
 
+    def register_platform(self, name, label, adapter_factory, check_fn, **kwargs):
+        self.platforms[name] = {
+            "label": label,
+            "adapter_factory": adapter_factory,
+            "check_fn": check_fn,
+            **kwargs,
+        }
+
 
 def _load_root_plugin():
     plugin_path = Path(__file__).resolve().parents[1] / "__init__.py"
@@ -38,7 +47,7 @@ def _load_root_plugin():
 
 def test_git_plugin_registers_tools_and_skill(monkeypatch):
     module = _load_root_plugin()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
+    monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _Ctx()
 
     module.register(ctx)

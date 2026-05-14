@@ -466,16 +466,14 @@ sequenceDiagram
 
   %% --- gateway boot ---
   rect rgb(242,249,244)
-    note over GW,SRV: Gateway boot + handshake
+    note over GW,SRV: Gateway boot + bearer-subprotocol auth
     OP->>CLI: openclaw gateway run
     CLI->>PLG: gateway.startAccount
     PLG->>GW: startOpenclawClawlingGateway
     GW->>SDK: createWSClient({ url, token, reconnect, heartbeat, ack })
     GW->>SDK: client.connect()
-    SDK->>WS: open WS
-    WS-->>SDK: connect.challenge { nonce }
-    SDK-->>WS: connect { nonce, token, signature = HMAC(token, nonce) }
-    WS-->>SDK: hello-ok
+    SDK->>WS: open WS<br/>Authorization: Bearer token<br/>X-Device-Id: openclaw-clawchat<br/>Sec-WebSocket-Protocol: clawchat.v1, bearer.token
+    WS-->>SDK: accepted
     SDK-->>GW: resolved
     GW-->>PLG: status { connected: true, running: true }
   end
@@ -537,8 +535,7 @@ sequenceDiagram
     note over SDK,WS: Transport failure → SDK reconnect (no work for us)
     WS--xSDK: close / error
     SDK->>SDK: scheduleReconnect<br/>computeBackoff(attempt) = initialDelay * 2^attempt,<br/>capped at maxDelay, jitterRatio applied
-    SDK->>WS: retry openSocket (delay elapses)
-    WS-->>SDK: connect.challenge (restart handshake)
+    SDK->>WS: retry openSocket with bearer subprotocol (delay elapses)
   end
 ```
 

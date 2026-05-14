@@ -87,11 +87,6 @@ def _load_plugin_module():
 
 def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -117,11 +112,6 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
 
 def test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
 
     from clawchat_gateway import setup
@@ -138,11 +128,6 @@ def test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer(m
 
 def test_plugin_platform_check_only_verifies_dependencies(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     monkeypatch.setattr(module, "_clawchat_dependencies_available", lambda: True)
     monkeypatch.setattr(
@@ -178,11 +163,6 @@ def test_plugin_platform_validation_falls_back_to_home_config(monkeypatch, tmp_p
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -214,11 +194,6 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -231,8 +206,7 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
 
 def test_plugin_registers_all_tools(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -250,8 +224,7 @@ def test_plugin_registers_all_tools(monkeypatch):
 
 def test_plugin_registers_native_clawchat_cli_command(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -266,8 +239,7 @@ def test_plugin_registers_native_clawchat_cli_command(monkeypatch):
 
 def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -277,8 +249,7 @@ def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
 
 def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -330,8 +301,7 @@ def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
 
 def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
     module.register(ctx)
 
     schema = ctx.tools["clawchat_activate"]["schema"]
@@ -346,8 +316,7 @@ def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch)
 
 def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
     module.register(ctx)
 
     result = asyncio.run(ctx.tools["clawchat_upload_avatar_image"]["handler"]({"filePath": "relative.png"}))
@@ -355,3 +324,16 @@ def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):
 
     assert payload["error"] == "validation"
     assert "absolute local path" in payload["message"]
+
+
+def test_plugin_requires_platform_registry(monkeypatch):
+    module = _load_plugin_module()
+    monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
+
+    try:
+        module.register(_Ctx())
+    except RuntimeError as exc:
+        assert "ctx.register_platform" in str(exc)
+        assert "Hermes v0.12.0+" in str(exc)
+    else:
+        raise AssertionError("register() should require the Hermes platform registry")

@@ -2,14 +2,14 @@
 
 ## What this repo is
 
-A **Hermes Agent plugin** that integrates the ClawChat messaging platform. On Hermes v0.12.0+ it is loaded like any other plugin and registers the `clawchat` gateway platform through `ctx.register_platform(...)`; no Hermes source patch is required. The legacy anchor-patch installer is kept only for older Hermes builds that do not expose the platform registry API.
+A **Hermes Agent plugin** that integrates the ClawChat messaging platform. On Hermes v0.12.0+ it is loaded like any other plugin and registers the `clawchat` gateway platform through `ctx.register_platform(...)`; no Hermes source patch is required. Older Hermes builds that do not expose the platform registry API are not supported.
 
-The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[project] name = "clawchat-gateway"`), with a `clawchat-gateway-install` console script.
+The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[project] name = "clawchat-gateway"`).
 
 ## Boot sequence
 
 1. Hermes loads the repo root as a plugin. Module-level code in `__init__.py` prepends the plugin root to `sys.path` so absolute imports of `clawchat_gateway.*` resolve both in this process and in the `python -m clawchat_gateway.activate` subprocess. Hermes then calls `register(ctx)`.
-2. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, `setup_fn`, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` falls back to `_install_gateway()` for legacy Hermes builds.
+2. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, `setup_fn`, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` raises a clear `RuntimeError`.
 3. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
 4. `_register_tools(ctx)` registers seven tools:
    - `clawchat_activate` — exchange an activation code for ClawChat credentials.
@@ -22,8 +22,6 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 5. `_register_cli_commands(ctx)` exposes `hermes clawchat activate CODE` on Hermes builds that support plugin CLI commands.
 6. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard (see "Self-echo guard" below).
 7. `ctx.register_skill("clawchat", skills/clawchat/SKILL.md)` attaches the skill.
-
-When the legacy fallback runs in step 3, `_refresh_gateway_module_cache()` is called immediately after `install.main(...)` returns. It calls `importlib.invalidate_caches()` and reloads `gateway.config`, `gateway.run`, and `clawchat_gateway.adapter` — necessary because hermes-agent may have already imported `gateway.config` (binding the pre-patch `Platform` enum) before plugin discovery ran.
 
 ## Runtime data flow
 
@@ -43,15 +41,14 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 
 - **Outbound** send: `adapter.send()` → optional `compute_delta` (stream_buffer) → `protocol.build_message_*` → `ClawChatConnection.send_frame()` → WebSocket.
 - **Inbound** message: WebSocket → `ClawChatConnection._read_loop` → `_dispatch_inbound` → `adapter._on_message` → `parse_inbound_message` → `adapter._handle_inbound` → `handle_message` (hermes-agent dispatches to the LLM).
-- **Run lifecycle**: Hermes v0.12+ calls adapter lifecycle hooks registered through the platform registry. `adapter.on_run_complete` emits `message.done` after LLM streaming finishes; it does not also emit a materialized `message.reply`, because `message.done` already carries the final fragments and sending both creates duplicate visible replies on current ClawChat clients. Legacy patched installs wire the same method through the `post_stream_hook` / `normal_stream_done_hook` insertions.
+- **Run lifecycle**: Hermes v0.12+ calls adapter lifecycle hooks registered through the platform registry. `adapter.on_run_complete` emits `message.done` after LLM streaming finishes; it does not also emit a materialized `message.reply`, because `message.done` already carries the final fragments and sending both creates duplicate visible replies on current ClawChat clients.
 - **Media**: inbound media URLs are downloaded by `media_runtime.download_inbound_media`; outbound media is uploaded via `upload_outbound_media`, which enforces `media_local_roots` for local paths.
 
 ## Key design choices
 
-- **Platform registry first.** Hermes v0.12+ provides `ctx.register_platform(...)`, so ClawChat registers its adapter, validation hooks, auth env vars, and platform prompt without modifying Hermes source.
-- **Legacy anchor-patch fallback.** `install.py` still inserts named blocks into hermes-agent source files for older Hermes builds without `ctx.register_platform`. Each block is wrapped with `# clawchat-gateway:<id>:start/end` markers for idempotency and clean uninstall.
+- **Platform registry only.** Hermes v0.12+ provides `ctx.register_platform(...)`, so ClawChat registers its adapter, validation hooks, auth env vars, and platform prompt without modifying Hermes source.
 - **`gateway.*` is imported at runtime, stubbed in tests.** Production adapter code imports `gateway.platforms.base.BasePlatformAdapter`; in tests `conftest.py` pre-registers stubs from `tests/fake_hermes.py` so the package can be imported without a real hermes-agent checkout.
-- **Two supported WebSocket paths.** If the WebSocket URL path is `/v1/ws`, the legacy hello/challenge handshake is skipped (realtime subprotocol). Otherwise the adapter does a `connect` frame with HMAC `sign` over `client_id|nonce` and waits for `hello-ok`.
+- **Bearer-subprotocol WebSocket auth.** ClawChat authenticates during the WebSocket upgrade via `Authorization`, `X-Device-Id`, and the `bearer.<token>` subprotocol. The adapter does not support JSON challenge/connect handshakes.
 - **Streaming with deltas.** `stream_buffer.compute_delta(prev, curr)` produces the appended chunk so `message.add` carries only the delta. If the new text isn't a prefix-extension of the previous, the full text is resent.
 - **Filter-before-send.** Adapter strips `<think>...</think>` blocks and tool-invocation fence/tag blocks out of visible output unless `show_think_output` / `show_tools_output` are explicitly enabled.
 - **Shared activation helper.** `activate_and_maybe_restart(...)` is used by the `clawchat_activate` tool, `hermes clawchat activate CODE`, the standalone module CLI, and `hermes gateway setup`. Tool and CLI activation schedule a detached restart by default; gateway setup passes `restart=False` because Hermes owns the final service action after setup: restart a running gateway, start an installed stopped gateway, or install/start a service when needed. See [activate.md](./activate.md), [cli.md](./cli.md), [setup.md](./setup.md), and [restart.md](./restart.md).
@@ -60,10 +57,9 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 
 ## Environment variables
 
-Runtime (read by Hermes v0.12+ platform registration helpers, the ClawChat Python modules here, and by legacy installed patches):
+Runtime (read by Hermes v0.12+ platform registration helpers and the ClawChat Python modules here):
 
 - `HERMES_HOME` — Hermes data dir (default `~/.hermes`). Controls `config.yaml`, `.env`, `skills/`, `plugins/` locations.
-- `HERMES_DIR` / `HERMES_AGENT_DIR` — hermes-agent install dir (default `$HERMES_HOME/hermes-agent`, or `/opt/hermes` if present).
-- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_REFRESH_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — override values in `platforms.clawchat.extra`; legacy patch installs inject the same values through the `env_overrides` blocks. `CLAWCHAT_GROUP_MODE` defaults to `"all"`; set it to `"mention"` to require an @mention in group chats.
-- `CLAWCHAT_ALLOWED_USERS`, `CLAWCHAT_ALLOW_ALL_USERS` — auth allowlist. The platform registration advertises these env vars to Hermes; `install.py` / `_configure_runtime_defaults()` set `CLAWCHAT_ALLOW_ALL_USERS=true` by default.
+- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_REFRESH_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — override values in `platforms.clawchat.extra`. `CLAWCHAT_GROUP_MODE` defaults to `"all"`; set it to `"mention"` to require an @mention in group chats.
+- `CLAWCHAT_ALLOWED_USERS`, `CLAWCHAT_ALLOW_ALL_USERS` — auth allowlist. The platform registration advertises these env vars to Hermes; `_configure_runtime_defaults()` sets `CLAWCHAT_ALLOW_ALL_USERS=true` by default.
 - `CLAWCHAT_DEVICE_ID` — override the auto-derived device id.

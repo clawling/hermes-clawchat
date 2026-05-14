@@ -9,12 +9,12 @@ This document describes the final wire contract implemented in this repository.
 - `client_message_id` does not exist.
 - `created_at`, `updated_at`, and `received_at` do not exist.
 - **Routing is driven by `chat_id`.** Every business event carries an envelope-top-level `chat_id`; the server calls `chat.Resolver.GetInfoFromChatID(chat_id)` to look up the chat's `{type, members}`, stamps `chat_type` on the downlink, and fans out the frame to each member *except the sender* (one Kafka produce per recipient, keyed by recipient user id). Chats cover both DMs (2 members, wire `chat_type="direct"`) and groups (N members, wire `chat_type="group"`) — there is no separate "direct" vs "group" routing path.
-- **`chat_type` is server-stamped on downlinks only.** Wire values: `"direct"` (DM) or `"group"`. The HTTP resolver response also accepts the legacy alias `"chat"` and normalises it to `"direct"`. Uplink frames MUST omit `chat_type`; any client-supplied value is ignored and overwritten.
+- **`chat_type` is server-stamped on downlinks only.** Wire values: `"direct"` (DM) or `"group"`. Uplink frames MUST omit `chat_type`; any client-supplied value is ignored and overwritten. Adapters reject any other downlink value.
 - Envelope-top-level `to` is preserved end-to-end for UI context (e.g. which conversation row to render the message under) but is NOT used by the server for routing. Clients MAY omit it.
 - Routed server-originated business events use envelope-top-level `sender`.
-- Auth events plus JSON `ping` / `pong` do not carry `to`, `sender`, `chat_id`, or `chat_type`. Server connection liveness uses WebSocket protocol Ping/Pong control frames; JSON `ping` / `pong` are only app-level echo events.
-- `connect.payload.device_id` identifies the client device for multi-device delivery. It is optional for backward compatibility; when omitted, the server uses the authenticated `user_id` as the device id.
-- All clients use device-level replay. `connect.payload.capabilities.device_replay` is accepted as a backward-compatible hint but is no longer required.
+- Transport authentication is handled by the WebSocket `Authorization: Bearer <token>` header and the `bearer.<token>` subprotocol. JSON auth handshake events are not part of this adapter contract.
+- `X-Device-Id` identifies the client device for multi-device delivery.
+- All clients use device-level replay.
 - `to.type` and `sender.type` only allow `direct` or `group`.
 - `sender` always identifies a user: `sender.type="direct"`, `sender.id = <user_id>`. Any client-supplied `sender` on uplink is discarded; the server stamps it from the authenticated identity.
 - Client-originated `message.send` and `message.reply` do not send top-level `sender`.
@@ -26,16 +26,12 @@ This document describes the final wire contract implemented in this repository.
 - Canonical business events never use payload-level `to` / `sender`.
 - Canonical message objects never use nested `message.chat` or `message.sender`.
 - `message_id` appears only at payload top level on events about one concrete materialized message.
-- Device replay sends missed messages as the original downlink envelopes in cursor order after `hello-ok`; it does not wrap them in `offline.batch` and it does not require receiver-side ack frames. The server advances the device replay cursor only after a successful WebSocket write. Live realtime writes advance the cursor only when no older replay record would be skipped.
+- Device replay sends missed messages as the original downlink envelopes in cursor order after the WebSocket session opens; it does not wrap them in batch envelopes and it does not require receiver-side ack frames. The server advances the device replay cursor only after a successful WebSocket write. Live realtime writes advance the cursor only when no older replay record would be skipped.
 
 ## Event taxonomy
 
 | Event | Direction | Envelope `to` | Envelope `sender` |
 | --- | --- | --- | --- |
-| `connect.challenge` | Server → Client | no | no |
-| `connect` | Client → Server | no | no |
-| `hello-ok` | Server → Client | no | no |
-| `hello-fail` | Server → Client | no | no |
 | `message.send` | Client ↔ Server | yes | client: no / server: yes |
 | `message.ack` | Server → Client | yes | no |
 | `message.reply` | Client ↔ Server | yes | client: no / server: yes |
@@ -44,13 +40,8 @@ This document describes the final wire contract implemented in this repository.
 | `message.done` | Client ↔ Server | yes | client: no / server: yes |
 | `message.failed` | Client ↔ Server | yes | client: no / server: yes |
 | `typing.update` | Either | yes | yes (server-injected) |
-| `offline.batch` | Server → Client | no | no |
-| `offline.ack` | Client → Server | no | no |
-| `offline.done` | Server → Client | no | no |
 | `ping` | Either | no | no |
 | `pong` | Either | no | no |
-
-`offline.batch`, `offline.ack`, and `offline.done` are deprecated legacy replay events. msghub no longer emits `offline.batch` or `offline.done`; `offline.ack` is accepted as a no-op if an old client sends it.
 
 ## Envelope shape
 
@@ -518,192 +509,21 @@ stream:
 Reusing the stream's `message_id` on the replay materialization lets the
 offline store keep one durable completed-stream row.
 
-### `offline.batch` (deprecated)
+## Connection Authentication
 
-Legacy server → client batch replay envelope. Current msghub does not emit this
-event; missed messages replay as their original downlink envelopes instead.
-
-```json
-{
-  "version": "2",
-  "event": "offline.batch",
-  "trace_id": "trace-offline-batch-01",
-  "emitted_at": 1776162700000,
-  "payload": {
-    "batch_id": 1,
-    "items": [
-      {
-        "version": "2",
-        "event": "message.send",
-        "chat_id": "chat-01HVB6R6XQ9J4S5T6U7V8W9X0Y",
-        "chat_type": "direct",
-        "to": { "id": "chat-01HVB6R6XQ9J4S5T6U7V8W9X0Y", "type": "direct" },
-        "sender": { "id": "user-alice", "type": "direct", "nick_name": "Alice" },
-        "payload": {
-          "message_id": "msg-01HVB6S7K8L9M0N1P2Q3R4S5T6",
-          "message_mode": "normal",
-          "message": {
-            "body": { "fragments": [{ "kind": "text", "text": "Offline message" }] },
-            "context": { "mentions": [], "reply": null },
-            "streaming": {
-              "status": "static", "sequence": 0, "mutation_policy": "sealed",
-              "started_at": null, "completed_at": null
-            }
-          }
-        }
-      }
-    ],
-    "remaining": 22
-  }
-}
-```
-
-### `offline.ack` (deprecated)
-
-Current msghub accepts this event as a no-op for old clients.
-
-```json
-{
-  "version": "2",
-  "event": "offline.ack",
-  "trace_id": "trace-offline-ack-01",
-  "emitted_at": 1776162700500,
-  "payload": { "batch_id": 1 }
-}
-```
-
-### `offline.done` (deprecated)
-
-Current msghub does not emit this event.
-
-```json
-{
-  "version": "2",
-  "event": "offline.done",
-  "trace_id": "trace-offline-done-01",
-  "emitted_at": 1776162701000,
-  "payload": {}
-}
-```
-
-## Handshake
-
-Every WebSocket session begins with a two-message exchange that
-authenticates the client and binds the `connect` frame to the specific
-socket (replay prevention). The exchange must complete within
-`websocket.handshake_timeout` (default 10 s; E2E uses 3 s).
-
-### Flow
-
-```
-Client                              Server
-  |                                    |
-  |<--- connect.challenge (nonce) -----|  on TCP accept
-  |                                    |
-  |---- connect ----------------------->|  must arrive within handshake_timeout
-  |     {token, nonce, device_id?,      |
-  |      capabilities?}                 |
-  |                                    |
-  |<--- hello-ok ----------------------|  auth success  ─┐ session open
-  |  OR                                |                  │
-  |<--- hello-fail (reason) -----------|  any failure   ─┘ socket closed
-```
-
-### Step 1 — Server sends `connect.challenge`
-
-```json
-{
-  "version": "2",
-  "event": "connect.challenge",
-  "trace_id": "challenge",
-  "emitted_at": 1776162600000,
-  "payload": { "nonce": "K5x7w8QHe_Rp2mLvNqZtAw" }
-}
-```
-
-### Step 2 — Client sends `connect`
-
-```json
-{
-  "version": "2",
-  "event": "connect",
-  "trace_id": "client-trace-01",
-  "emitted_at": 1776162600500,
-  "payload": {
-    "token": "bearer-token-or-jwt",
-    "nonce": "K5x7w8QHe_Rp2mLvNqZtAw",
-    "device_id": "device-ios-01HVB6R6XQ9J4S5T6U7V8W9X0Y",
-    "capabilities": {
-      "multi_device": true,
-      "device_replay": true
-    }
-  }
-}
-```
-
-`device_id` is an application-defined stable device identifier, not a
-push-provider token. It lets the hub keep independent delivery state per
-`user_id + device_id`. When omitted, the server MUST use the authenticated
-`user_id` as the device id; this preserves backward compatibility and makes
-single-device clients stable across reconnects.
-
-`capabilities` is optional. `device_replay=true` is still accepted for clients
-that already send it, but missed messages are replayed as normal downlink
-envelopes for every client.
-
-Supported capability flags:
-
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `multi_device` | boolean | `false` | Client can keep multiple devices online for the same user. |
-| `device_replay` | boolean | `false` | Backward-compatible hint; server always uses device replay. |
-
-### Step 3a — Success: Server sends `hello-ok`
-
-```json
-{
-  "version": "2",
-  "event": "hello-ok",
-  "trace_id": "client-trace-01",
-  "emitted_at": 1776162600800,
-  "payload": {
-    "device_id": "device-ios-01HVB6R6XQ9J4S5T6U7V8W9X0Y",
-    "delivery_mode": "device_replay"
-  }
-}
-```
-
-### Step 3b — Failure: Server sends `hello-fail`
-
-```json
-{
-  "version": "2",
-  "event": "hello-fail",
-  "emitted_at": 1776162600700,
-  "payload": { "reason": "authentication failed" }
-}
-```
-
-Possible `reason` values:
-
-| `reason` | Trigger |
-|---|---|
-| `"nonce mismatch"` | `payload.nonce` ≠ issued nonce |
-| `"authentication failed"` | Token rejected |
-| `"invalid connect event"` | First frame is not a parseable `connect` |
-| `"invalid connect payload"` | `payload` cannot be decoded |
-
-On timeout (no frame within `handshake_timeout`) the server closes the
-socket without sending `hello-fail`.
+Every WebSocket session authenticates during the HTTP upgrade. The adapter sends
+`Authorization: Bearer <token>`, `X-Device-Id: <stable-device-id>`, and
+subprotocols `clawchat.v1` plus `bearer.<token>`. A socket accepted by the
+server is immediately ready for business events; the adapter does not send or
+wait for JSON auth frames.
 
 ## Device Replay
 
-After `hello-ok`, the server replays missed messages for the authenticated
+After the WebSocket session opens, the server replays missed messages for the authenticated
 `user_id + device_id` by sending the original downlink envelopes in delivery
 order:
 
 ```
-hello-ok
 message.send / message.reply / message.created / message.add / message.done ...
 ```
 
@@ -814,8 +634,7 @@ same materialized envelope for missed completed streams.
 - `chat_type` is server-stamped on every downlink; uplinks MUST omit it.
 - Conversation `device_list` metadata supplies push tokens only; it does not restrict WebSocket fanout, which targets all currently online devices for the recipient user.
 - Missed completed streams should be replayed as a single `message.reply` with the full merged fragments instead of replaying `message.created`, `message.add`, or `message.done` individually.
-- `offline.batch` / `offline.ack` / `offline.done` are deprecated. msghub no longer emits batch replay envelopes and accepts `offline.ack` only as a no-op.
-- Servers replay missed messages as normal downlink envelopes after `hello-ok` and MUST NOT require receiver-side ack frames.
+- Servers replay missed messages as normal downlink envelopes after the WebSocket session opens and MUST NOT require receiver-side ack frames.
 - Device replay advances `user_id + device_id` server-side cursor only after a successful WebSocket write.
 
 Anything that still treats nested message routing, sender-owned client sends, or removed timestamp/correlation fields as canonical is out of contract for this version.

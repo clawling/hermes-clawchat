@@ -123,6 +123,39 @@ def test_default_group_mode_accepts_group_message_without_mention():
     assert inbound.chat_type == "group"
 
 
+def test_missing_chat_type_is_rejected():
+    cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
+    env = {
+        "chat_id": "u1",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message": {
+                "fragments": [{"kind": "text", "text": "hello"}],
+                "context": {},
+            }
+        },
+    }
+
+    assert parse_inbound_message(env, cfg) is None
+
+
+def test_legacy_chat_type_alias_is_rejected():
+    cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
+    env = {
+        "chat_id": "u1",
+        "chat_type": "chat",
+        "sender": {"id": "u1", "nick_name": "alice"},
+        "payload": {
+            "message": {
+                "fragments": [{"kind": "text", "text": "hello"}],
+                "context": {},
+            }
+        },
+    }
+
+    assert parse_inbound_message(env, cfg) is None
+
+
 def test_mixed_text_and_media_fragments_render_placeholders_and_media_urls():
     cfg = ClawChatConfig(websocket_url="wss://x", token="t", user_id="bot")
     env = {

@@ -1,5 +1,5 @@
 - 高风险 默认开放所有用户访问  
-  clawchat_gateway/install.py:356-378 会默认写入 CLAWCHAT_ALLOW_ALL_USERS=true，__init__.py:221-222 又把它注册成平台鉴权入口，docs/architecture.md:66 也明确写了这是默认值。这个不是“代码味道”，而是真正的 open-by-default 访问控制风险：新安装后如果运维没额外收紧，任何 ClawChat 用户都可能直接和 Hermes 对话。
+  clawchat_gateway/runtime_defaults.py 会默认写入 CLAWCHAT_ALLOW_ALL_USERS=true，__init__.py 又把它注册成平台鉴权入口，docs/architecture.md 也明确写了这是默认值。这个不是“代码味道”，而是真正的 open-by-default 访问控制风险：新安装后如果运维没额外收紧，任何 ClawChat 用户都可能直接和 Hermes 对话。
 - 高风险 明文 http/ws 默认值会暴露 Bearer Token  
   clawchat_gateway/api_client.py:14-15 默认是 http://... / ws://...，activate.py:78-84 会从 http 推导出 ws，而 connection.py:196-200 不但在 Authorization 里带 token，还把 token 放进了 WebSocket subprotocol：bearer.<token>。这意味着只要链路不是完全可信，凭证可能被中间人、代理或日志系统看到，风险比普通 header-only 认证还高。
 - 中高风险 媒体 URL 可触发任意远程抓取，带 SSRF / DoS 面  

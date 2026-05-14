@@ -1,6 +1,6 @@
 # Skill — `skills/clawchat/SKILL.md`
 
-A Hermes skill installed into `$HERMES_HOME/skills/clawchat/` by `install.install_skill()` and registered with Hermes via `ctx.register_skill("clawchat", skill, description=...)` in the repo-root `register()`. The skill text is surfaced verbatim to the Hermes LLM whenever the `clawchat` skill is activated.
+A Hermes skill bundled in `skills/clawchat/` and registered with Hermes via `ctx.register_skill("clawchat", skill, description=...)` in the repo-root `register()`. The skill text is surfaced verbatim to the Hermes LLM whenever the `clawchat` skill is activated.
 
 ## Frontmatter
 
@@ -39,9 +39,7 @@ Both the tool `description` strings (in the repo-root `__init__.py::_register_to
 - Keep the "upload-first, then profile" sequence for avatar updates identical in both places.
 - Keep the direct-tool boundary explicit so Hermes does not choose the generic `execute` tool for ClawChat API operations.
 
-## Installation
+## Registration
 
-- Source: `skills/clawchat/` inside the repo, computed by `install._skill_source_dir()`.
-- Target: `$HERMES_HOME/skills/clawchat/`, computed by `install._skill_target_dir()`.
-- `install.install_skill(hermes_dir)` deletes any legacy `$HERMES_HOME/plugins/clawchat-tools/` directory and any existing target, then `shutil.copytree(source, target)`.
-- `install.configure_clawchat_streaming()` additionally clears `$HERMES_HOME/.skills_prompt_snapshot.json` so Hermes regenerates the prompt snapshot on next boot.
+`register(ctx)` resolves `skills/clawchat/SKILL.md` relative to the plugin root
+and calls `ctx.register_skill(...)` when the file exists.

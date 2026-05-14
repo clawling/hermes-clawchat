@@ -17,7 +17,6 @@ docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes pl
 Defaults:
 
 - `HERMES_HOME`: `~/.hermes`
-- `HERMES_DIR`: `~/.hermes/hermes-agent`
 - plugin source: `$HERMES_HOME/plugins/clawchat`
 
 The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx.register_platform(...)`; no Hermes source patch or Node install shim is needed on v0.12.0+.

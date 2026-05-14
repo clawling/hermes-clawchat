@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Keep docs in sync with code
 
-Always read the relevant doc before changing a feature, and update it after. Whenever you add, remove, or change a Hermes tool, CLI subcommand, env var, anchor patch, config field, or wire-protocol behavior, update the matching file in the same change set:
+Always read the relevant doc before changing a feature, and update it after. Whenever you add, remove, or change a Hermes tool, CLI subcommand, env var, config field, or wire-protocol behavior, update the matching file in the same change set:
 
 - `README.md`, `install.md`, `.e2e/dev_install.md` — install/quick-start, env vars, user-visible flows
 - `plugin.yaml` — manifest (`requires_env`, `provides_tools`, `provides_hooks`); must match what `register(ctx)` actually registers
@@ -16,7 +16,7 @@ Code and docs must not drift.
 
 ## What this repo is
 
-A **Hermes Agent plugin** that integrates the ClawChat messaging platform. It is an **installable plugin made for hermes-agent and will not be merged into the original hermes-agent project** — it is loaded at runtime by hermes-agent. On Hermes v0.12.0+ it registers the `clawchat` gateway platform via `ctx.register_platform(...)`; the legacy anchor-patch installer in `install.py` is only a fallback for older Hermes builds without the platform registry API.
+A **Hermes Agent plugin** that integrates the ClawChat messaging platform. It is an **installable plugin made for hermes-agent and will not be merged into the original hermes-agent project** — it is loaded at runtime by hermes-agent. On Hermes v0.12.0+ it registers the `clawchat` gateway platform via `ctx.register_platform(...)`; older Hermes builds without the platform registry API are not supported.
 
 The root `__init__.py` is the plugin entrypoint; `plugin.yaml` is the manifest; `clawchat_gateway/` is the gateway adapter package (also pip-installable as `clawchat-gateway`).
 
@@ -29,8 +29,8 @@ For boot sequence, runtime data flow, design choices, the self-echo guard ration
 All runtime CLIs must use the **Hermes Python venv**, not the system Python, because the adapter imports `gateway.platforms.base` / `gateway.config` from hermes-agent at runtime. Tests stub these (see `docs/tests.md`), so the system Python is fine for tests only.
 
 - Test runner: `pytest` (single test: `pytest path::test_name`).
-- CLI references: `docs/activate.md`, `docs/profile.md`, `docs/installer.md`.
-- End-user install on Hermes v0.12.0+: `hermes plugins install clawling/hermes-clawchat && hermes plugins enable clawchat`. The `clawchat_gateway.install` CLI is only the legacy fallback for older Hermes checkouts without `ctx.register_platform`.
+- CLI references: `docs/activate.md`, `docs/profile.md`, `docs/runtime-defaults.md`.
+- End-user install on Hermes v0.12.0+: `hermes plugins install clawling/hermes-clawchat && hermes plugins enable clawchat`.
 
 ## Testing
 

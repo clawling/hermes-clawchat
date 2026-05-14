@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import json
 import logging
 import os
@@ -32,69 +31,10 @@ if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
 
 
-def _hermes_dir() -> Path:
-    for key in ("HERMES_DIR", "HERMES_AGENT_DIR"):
-        value = os.environ.get(key)
-        if value:
-            return Path(value)
-    if Path("/opt/hermes/gateway").is_dir():
-        return Path("/opt/hermes")
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "hermes-agent"
-
-
-def _install_gateway() -> None:
-    from clawchat_gateway.install import main as install_main
-
-    hermes_dir = _hermes_dir()
-    code = install_main(["--hermes-dir", str(hermes_dir)])
-    if code != 0:
-        raise RuntimeError(f"clawchat gateway install failed with exit code {code}")
-
-    _refresh_gateway_module_cache()
-
-
 def _setup_clawchat_platform() -> None:
     from clawchat_gateway.setup import setup_clawchat_platform
 
     setup_clawchat_platform()
-
-
-_GATEWAY_MODULES_TO_REFRESH = (
-    "gateway.config",
-    "gateway.run",
-    # Also the adapter: it does ``from gateway.config import Platform`` at
-    # module scope, so if anything imports it before register() has applied
-    # the patch (e.g. a consumer that does ``import clawchat_gateway.adapter``
-    # directly), its bound ``Platform`` is stale even after we reload
-    # ``gateway.config``. Reloading the adapter re-binds it from the fresh
-    # enum.
-    "clawchat_gateway.adapter",
-)
-
-
-def _refresh_gateway_module_cache() -> None:
-    """Ensure patched gateway modules are picked up by later imports.
-
-    Plugin discovery can run after hermes-agent's CLI has already imported
-    ``gateway.config`` (e.g. to validate the loaded config). Our file patch
-    won't take effect unless we invalidate the import caches and reload any
-    gateway module that was imported before we patched it on disk, otherwise
-    ``gateway.run`` resolves ``Platform.CLAWCHAT`` against a stale enum.
-    """
-    importlib.invalidate_caches()
-    for mod_name in _GATEWAY_MODULES_TO_REFRESH:
-        mod = sys.modules.get(mod_name)
-        if mod is None:
-            continue
-        try:
-            importlib.reload(mod)
-        except Exception as exc:
-            logger.error(
-                "ClawChat could not reload %s after patching; existing "
-                "references to its symbols may be stale: %s",
-                mod_name,
-                exc,
-            )
 
 
 def _tool_error(exc: Exception) -> dict:
@@ -216,7 +156,9 @@ def _create_clawchat_adapter(config):
 def _register_platform(ctx) -> bool:
     register_platform = getattr(ctx, "register_platform", None)
     if not callable(register_platform):
-        return False
+        raise RuntimeError(
+            "ClawChat requires Hermes v0.12.0+ with ctx.register_platform support."
+        )
 
     register_platform(
         name="clawchat",
@@ -244,7 +186,7 @@ def _register_platform(ctx) -> bool:
 
 def _configure_runtime_defaults() -> None:
     try:
-        from clawchat_gateway.install import (
+        from clawchat_gateway.runtime_defaults import (
             configure_clawchat_allow_all,
             configure_clawchat_streaming,
         )
@@ -653,19 +595,8 @@ def _register_cli_commands(ctx) -> None:
 
 
 def register(ctx) -> None:
-    if _register_platform(ctx):
-        _configure_runtime_defaults()
-    else:
-        try:
-            _install_gateway()
-        except Exception as exc:
-            logger.error(
-                "ClawChat gateway auto-install failed; skipping tool/skill "
-                "registration to avoid leaving hermes-agent in a partially "
-                "patched state: %s",
-                exc,
-            )
-            raise
+    _register_platform(ctx)
+    _configure_runtime_defaults()
 
     _register_tools(ctx)
     _register_cli_commands(ctx)
