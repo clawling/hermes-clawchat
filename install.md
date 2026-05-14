@@ -29,42 +29,22 @@ hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
 ```
 
-On Hermes v0.12.0 and newer this loads ClawChat as a pluggable gateway platform. The plugin calls `ctx.register_platform(...)` at startup, so the ClawChat adapter is recognized by the gateway without patching Hermes source files. This also registers the seven `clawchat_*` tools and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
+On Hermes v0.12.0 and newer this loads ClawChat as a pluggable gateway platform. The plugin calls `ctx.register_platform(...)` at startup, so the ClawChat adapter is recognized by the gateway without patching Hermes source files. This also registers the six account/profile/media `clawchat_*` tools and copies the plugin source into `$HERMES_HOME/plugins/clawchat/`.
 
-## 4. Activate and dispatch the restart — one terminal call, then stop
+## 4. Activate ClawChat — one terminal call, then stop
 
-Run the block below in **one** tool:'terminal' invocation. Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message — pass it as a positional argument to `clawchat_gateway.activate` (no stdin pipe, no `echo | …`). The code is one-time-use; if the command fails, surface the stderr verbatim and ask for a fresh code instead of retrying.
+Use the native plugin CLI command registered by Hermes:
 
 ```bash
-set -e
-
-PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/clawchat"
-PY="/opt/hermes/.venv/bin/python"
-[ -x "$PY" ] || PY="$HOME/.hermes/hermes-agent/.venv/bin/python"
-[ -x "$PY" ] || PY="python3"
-
-CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
-
-# `cd $PLUGIN_DIR` puts the plugin root on sys.path[0] so `python -m
-# clawchat_gateway.activate` resolves the package without an `export
-# PYTHONPATH=…` line — Hermes' built-in tirith scanner flags any
-# `export PYTHONPATH=…` as an interpreter-hijack and routes the
-# command through the approval prompt, which auto-denies after 60s
-# in non-interactive sessions. The activate CLI writes CLAWCHAT_TOKEN
-# and CLAWCHAT_REFRESH_TOKEN to $HERMES_HOME/.env, writes non-secret
-# ClawChat platform config to config.yaml, and dispatches a detached
-# `hermes gateway restart` so the gateway picks up the new
-# credentials. One-time code — do not retry on failure.
-cd "$PLUGIN_DIR"
-"$PY" -m clawchat_gateway.activate "$CLAWCHAT_CODE"
-
-echo "clawchat: activation + restart dispatched"
+hermes clawchat activate CLAWCHAT_CODE_GOES_HERE
 ```
 
-When this block exits 0 with `clawchat: activation + restart dispatched` printed, the install is done. If the block exits non-zero (the `set -e` line will catch any failure from the activate CLI), report the captured stderr to the user and ask them for a fresh code — do not retry on the same code. On Hermes v0.12.0+, the enabled plugin registers the ClawChat adapter through Hermes `ctx.register_platform(...)`; do **not** run `python -m clawchat_gateway.install --hermes-dir ...` on Hermes versions that support plugin platform registration. That patch installer is only a legacy fallback for older Hermes builds without pluggable gateway platforms.
+Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message. The code is one-time-use. If the command is not recognized, report that this Hermes build did not expose the native ClawChat CLI command. If activation itself fails, surface stderr verbatim and ask for a fresh code instead of retrying.
 
-The `clawchat_gateway.activate` CLI dispatches a detached `sh -lc 'sleep 2; hermes gateway restart'` after writing `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN`, so the gateway restart happens in the background without any further action — you do **not** need to ask the user (or anyone) to run `hermes gateway restart` manually.
+`hermes clawchat activate CODE` writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and writes non-secret ClawChat platform config to `config.yaml`. When it exits 0 with:
 
-**Do not** run `hermes gateway restart` yourself from inside this chat session — it does not return within the chat tool's 60-second cap, and the activate CLI has already scheduled it. **Do not** poll `hermes gateway status`, **do not** invoke `clarify`, and **do not** ask the user to confirm anything.
+```text
+clawchat: activation complete for <user_id>
+```
 
-Reply once — only when the activate block exited 0: "ClawChat is activated and the gateway is restarting in the background; it will be live in a few seconds." On non-zero exit, reply with the stderr verbatim instead. That is your final message — stop calling tools.
+the install is done. Reply once: "ClawChat is activated." On non-zero exit, reply with stderr verbatim instead.

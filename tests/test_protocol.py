@@ -8,9 +8,6 @@ from clawchat_gateway.protocol import (
     build_message_failed_event,
     build_message_reply_event,
     build_typing_update_event,
-    compute_client_sign,
-    extract_nonce,
-    is_hello_ok,
     new_frame_id,
 )
 
@@ -20,38 +17,34 @@ def _assert_prefixed_uuid(value: str, prefix: str) -> None:
     UUID(value.removeprefix(f"{prefix}-"))
 
 
-def test_compute_client_sign_is_lower_hex():
-    sig = compute_client_sign("openclaw", "abc123", "secret")
-    assert sig == sig.lower()
-    assert len(sig) == 64
-
-
 def test_new_frame_id_uses_prefixed_uuid():
     _assert_prefixed_uuid(new_frame_id("trace"), "trace")
 
 
-def test_build_connect_request_uses_realtime_connect_event():
-    env = build_connect_request(
+def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields():
+    frame = build_connect_request(
         frame_id="trace-1",
         token="tok",
-        client_id="client-1",
-        client_version="v1",
-        sign="sig",
-        device_id="dev-1",
-        capabilities={"streaming": True},
+        nonce="nonce-1",
+        device_id="device-1",
+        capabilities={"multi_device": True, "device_replay": True},
     )
 
-    assert env["version"] == "2"
-    assert env["event"] == "connect"
-    assert env["trace_id"] == "trace-1"
-    assert env["payload"] == {
-        "token": "tok",
-        "client_id": "client-1",
-        "client_version": "v1",
-        "device_id": "dev-1",
-        "capabilities": {"streaming": True},
-        "sign": "sig",
+    assert frame == {
+        "version": "2",
+        "event": "connect",
+        "trace_id": "trace-1",
+        "payload": {
+            "token": "tok",
+            "nonce": "nonce-1",
+            "device_id": "device-1",
+            "capabilities": {"multi_device": True, "device_replay": True},
+        },
     }
+    assert "sign" not in frame["payload"]
+    assert ("sig" + "nature") not in frame["payload"]
+    assert ("client_" + "id") not in frame["payload"]
+    assert ("client_" + "version") not in frame["payload"]
 
 
 def test_client_originated_business_frames_omit_root_chat_type_and_sender():
@@ -164,39 +157,3 @@ def test_build_typing_update_event():
     assert env["chat_id"] == "c1"
     assert "chat_type" not in env
     assert env["payload"]["is_typing"] is True
-
-
-def test_extract_nonce_returns_none_when_payload_is_not_dict():
-    assert extract_nonce({"payload": "bad"}) is None
-
-
-def test_extract_nonce_returns_none_when_payload_data_is_not_dict():
-    assert extract_nonce({"payload": {"data": "bad"}}) is None
-
-
-def test_extract_nonce_reads_nonce_from_nested_data():
-    assert extract_nonce({"payload": {"data": {"nonce": "abc123"}}}) == "abc123"
-
-
-def test_is_hello_ok_returns_false_when_payload_is_not_dict():
-    assert (
-        is_hello_ok(
-            {"type": "res", "requestId": "req-1", "payload": "bad"},
-            "req-1",
-        )
-        is False
-    )
-
-
-def test_is_hello_ok_returns_false_for_wrong_payload_type():
-    assert (
-        is_hello_ok(
-            {"type": "res", "requestId": "req-1", "payload": {"type": "hello-no"}},
-            "req-1",
-        )
-        is False
-    )
-
-
-def test_is_hello_ok_accepts_realtime_hello_event():
-    assert is_hello_ok({"version": "2", "event": "hello-ok", "payload": {}}, "req-1") is True

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import time
 import uuid
@@ -23,14 +21,6 @@ def decode_frame(text: str) -> dict[str, Any]:
     return obj
 
 
-def compute_client_sign(client_id: str, nonce: str, token: str) -> str:
-    return hmac.new(
-        token.encode("utf-8"),
-        f"{client_id}|{nonce}".encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-
-
 def extract_nonce(frame: dict[str, Any]) -> str | None:
     payload = frame.get("payload")
     if not isinstance(payload, dict):
@@ -46,7 +36,7 @@ def extract_nonce(frame: dict[str, Any]) -> str | None:
 
 
 def is_hello_ok(frame: dict[str, Any], expected_request_id: str) -> bool:
-    if frame.get("event") == "hello-ok":
+    if frame.get("event") == "hello-ok" and frame.get("trace_id") == expected_request_id:
         return True
     payload = frame.get("payload")
     if not isinstance(payload, dict):
@@ -62,17 +52,13 @@ def build_connect_request(
     *,
     frame_id: str,
     token: str,
-    client_id: str,
-    client_version: str,
-    sign: str,
+    nonce: str,
     device_id: str | None = None,
     capabilities: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "token": token,
-        "client_id": client_id,
-        "client_version": client_version,
-        "sign": sign,
+        "nonce": nonce,
     }
     if device_id is not None:
         payload["device_id"] = device_id

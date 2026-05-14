@@ -1,6 +1,6 @@
 # Protocol — `clawchat_gateway/protocol.py`
 
-Pure frame builders, encoding helpers, and the auth-signature helper for ClawChat Protocol v2. No I/O, no async, no shared state — every function is a pure transform from arguments to a new frame `dict` (or string / bytes).
+Pure frame builders and encoding helpers for ClawChat Protocol v2. No I/O, no async, no shared state — every function is a pure transform from arguments to a new frame `dict` (or string / bytes).
 
 For the wire-protocol semantics (event names, payload field meanings, error codes), see [`clawchat-protocol.md`](./clawchat-protocol.md). This file documents the Python module surface.
 
@@ -12,19 +12,15 @@ For the wire-protocol semantics (event names, payload field meanings, error code
 | `decode_frame` | `(text: str) -> dict` | `json.loads`; raises `ValueError("frame must be object")` if the parsed value is not a dict. |
 | `new_frame_id` | `(prefix: str = "req") -> str` | `f"{prefix}-{uuid4()}"`. Used for `trace_id` on outbound frames. |
 
-## Auth signature
+## Connect handshake
 
-| Function | Signature | Behaviour |
-|---|---|---|
-| `compute_client_sign` | `(client_id: str, nonce: str, token: str) -> str` | `HMAC-SHA256(token, f"{client_id}|{nonce}").hexdigest()` — lower-hex. Used in the `connect` request payload to prove possession of `token` against the server-issued nonce. |
-
-## Handshake helpers
-
-| Function | Signature | Behaviour |
-|---|---|---|
-| `extract_nonce` | `(frame: dict) -> str \| None` | Returns `frame.payload.nonce` if set, else `frame.payload.data.nonce`. Returns `None` when payload (or nested `data`) is not a dict. |
-| `is_hello_ok` | `(frame: dict, expected_request_id: str) -> bool` | Accepts either the realtime form (`event == "hello-ok"`) **or** the legacy res form (`type == "res"` and `requestId == expected_request_id` and `payload.type == "hello-ok"`). Returns `False` for non-dict payloads. |
-| `build_connect_request` | `(*, frame_id, token, client_id, client_version, sign, device_id=None, capabilities=None) -> dict` | Builds the `connect` event with `version: "2"`, `trace_id: frame_id`, and a payload of `{token, client_id, client_version, sign, device_id?, capabilities?}`. The connection module additionally injects `payload["nonce"]` after building. |
+`build_connect_request(frame_id, token, nonce, device_id=None, capabilities=None)`
+builds the msghub-compatible `connect` frame used after
+`connect.challenge`. Its payload contains token, nonce, optional device id,
+and optional capabilities. Hermes passes `{multi_device: true,
+device_replay: true}` so missed-message replay arrives as ordinary downlink
+envelopes after `hello-ok`; legacy `offline.batch`, `offline.ack`, and
+`offline.done` are compatibility events only.
 
 ## Message envelope
 
@@ -63,4 +59,3 @@ For the wire-protocol semantics (event names, payload field meanings, error code
 - Every builder is **pure**: timestamps come from `time.time()` at call time, but no shared state or locks. Tests can call them directly and assert on the dict shape.
 - New events should preserve the `_message_envelope` skeleton (`version: "2"`, `trace_id` from `new_frame_id`) so the connection-layer logging and dispatcher remain uniform.
 - When you add a new `streaming.status` value, also update the corresponding state-machine handling in `adapter.py::_ActiveRun` and the receiver expectations in `clawchat-protocol.md`.
-- `is_hello_ok` accepts both legacy and realtime forms — extend the OR carefully, since loosening the legacy match silently allows stray `res` frames to terminate the handshake.

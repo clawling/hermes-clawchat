@@ -1,24 +1,24 @@
 # Config — `clawchat_gateway/config.py`
 
-Frozen dataclass wrapping the `extra` section of hermes-agent's `PlatformConfig` for ClawChat. Accepts snake_case and camelCase keys.
+Frozen dataclass wrapping the `extra` section of hermes-agent's `PlatformConfig` for ClawChat. Hermes `config.yaml` keys are snake_case; OpenClaw-style camelCase keys are not read here.
 
 ## Helpers
 
 | Function | Signature | Purpose |
 |---|---|---|
-| `_get_alias` | `(data: dict, snake: str, camel: str, default=None) -> Any` | Look up `snake` first, then `camel`, else `default`. |
+| `_get_config_value` | `(data: dict, key: str, default=None) -> Any` | Look up one snake_case Hermes config key, else `default`. |
 | `_read_env_file_value` | `(name: str) -> str` | Parse `$HERMES_HOME/.env` (default `~/.hermes/.env`); strip `export ` prefix and `"`/`'` quoting; return value for `name` or `""`. |
 | `_read_hermes_env_value` | `(name: str) -> str` | Try `hermes_cli.config.get_env_value(name)`; return `""` on import / call failure. |
 | `_get_env` | `(*names: str) -> str` | Three-pass lookup over the candidate names. Pass 1: try every name against **process env**. Pass 2: try every name against the **Hermes env helper**. Pass 3: try every name against **`$HERMES_HOME/.env`**. Returns the first non-empty match (or `""`). The pass order means process env always wins over the file even if the file lists a different alias. |
 
 ### Env-var resolution priority
 
-For connectivity values (`websocket_url`, `base_url`, `token`, `refresh_token`, `user_id`, `reply_mode`, `group_mode`, `media_local_roots`), `from_platform_config` calls `_get_env(...)` first and only falls back to `_get_alias(extra, ...)` if no env value is found. The full precedence is:
+For connectivity values (`websocket_url`, `base_url`, `token`, `refresh_token`, `user_id`, `reply_mode`, `group_mode`, `media_local_roots`), `from_platform_config` calls `_get_env(...)` first and only falls back to snake_case keys in `extra` if no env value is found. The full precedence is:
 
 1. **Process env** — `os.environ[name]` for any of the candidate names.
 2. **Hermes-managed env** — `hermes_cli.config.get_env_value(name)`, when the `hermes_cli` package is importable.
 3. **`$HERMES_HOME/.env`** — line-parsed by `_read_env_file_value`.
-4. **`extra` dict** — snake_case then camelCase via `_get_alias`.
+4. **`extra` dict** — snake_case Hermes config keys only.
 5. **Hardcoded default** — the field's dataclass default.
 
 Tunables that are not surfaced as `CLAWCHAT_*` env vars (stream/reconnect/heartbeat/ack values) skip steps 1–3 and resolve directly from `extra`.
@@ -34,7 +34,7 @@ class ClawChatConfig:
     refresh_token: str = ""
     user_id: str = ""
     reply_mode: str = "stream"
-    group_mode: str = "mention"
+    group_mode: str = "all"
     stream_flush_interval_ms: int = 250
     stream_min_chunk_chars: int = 40
     stream_max_buffer_chars: int = 2000
@@ -57,7 +57,7 @@ class ClawChatConfig:
 Field groups:
 
 - **Connectivity** — `websocket_url`, `base_url`, `token`, `refresh_token`, `user_id`. All are resolved via `_get_env(...)` first (see "Env-var resolution priority" above), then fall back to `extra`.
-- **Behaviour** — `reply_mode` (`"stream"` enables live delta sends; anything else falls back to a single `message.reply`), `group_mode` (`"mention"` filters inbound group messages to those that @mention `user_id`).
+- **Behaviour** — `reply_mode` (`"stream"` enables live delta sends; anything else falls back to a single `message.reply`), `group_mode` (`"all"` accepts every inbound group message by default; `"mention"` opts into filtering group messages to those that @mention `user_id`).
 - **Streaming tunables** — `stream_flush_interval_ms`, `stream_min_chunk_chars`, `stream_max_buffer_chars` (currently consumed externally / not by the adapter directly).
 - **Reconnect** — initial delay, max delay, jitter ratio, max retries (`float("inf")` ≈ forever).
 - **Heartbeat** — `ping_interval` / `ping_timeout` for the WebSocket library (in ms; divided by 1000 in `connection.py`).
@@ -72,7 +72,7 @@ Field groups:
 
 - Reads `platform_config.extra` (default `{}`).
 - Nested `extra["stream"]` provides stream tunables.
-- `media_local_roots` from `_get_alias(..., "media_local_roots", "mediaLocalRoots", ())` is coerced to a tuple.
+- `media_local_roots` from `extra["media_local_roots"]` is coerced to a tuple.
 - Booleans for `show_tools_output`, `show_tool_progress`, `show_think_output`, and `enable_rich_interactions` are force-cast with `bool(...)` so truthy strings from env vars round-trip correctly.
 
-**When extending:** add the new field with a default, add an `_get_alias` lookup in `from_platform_config`, and update any writer that persists config (e.g., `activate.persist_activation`, `install.configure_clawchat_streaming`) so the roundtrip stays consistent.
+**When extending:** add the new field with a default, add a snake_case `_get_config_value` lookup in `from_platform_config`, and update any writer that persists config (e.g., `activate.persist_activation`, `install.configure_clawchat_streaming`) so the roundtrip stays consistent.

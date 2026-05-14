@@ -21,6 +21,7 @@ from gateway.platforms.base import (
 
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.connection import ClawChatConnection, ConnectionState
+from clawchat_gateway.group_context import build_group_channel_prompt
 from clawchat_gateway.inbound import InboundMessage, parse_inbound_message
 from clawchat_gateway.media_runtime import (
     download_inbound_media,
@@ -45,6 +46,7 @@ inbound_trace = logging.getLogger("clawchat_gateway.inbound_trace")
 TYPING_REFRESH_SECONDS = 10.0
 INBOUND_RATE_WINDOW_SECONDS = 30.0
 INBOUND_RATE_WARN_THRESHOLD = 5
+COMPLETED_RUN_CACHE_MAX = 1024
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
@@ -83,10 +85,10 @@ _ACTIVATION_INTENT_RE = re.compile(
 _HERMES_STREAM_CURSOR_RE = re.compile(r"[ \t]*▉\Z")
 _CLAWCHAT_SKILL_PROMPT = (
     "The user may be activating or configuring ClawChat. Use the installed "
-    "clawchat skill instructions. If an activation code is present, run "
-    "`python -m clawchat_gateway.activate CODE`; it writes the ClawChat token "
-    "and refresh token and schedules a Hermes gateway restart. If no code is "
-    "present, ask for the ClawChat activation code."
+    "clawchat skill instructions. Activation is handled by the "
+    "`/clawchat-activate CODE` slash command, `hermes clawchat activate CODE`, "
+    "or `hermes gateway setup`; do not use a ClawChat activation tool. If no "
+    "code is present, ask for the ClawChat activation code."
 )
 
 
@@ -141,6 +143,9 @@ class ClawChatAdapter(BasePlatformAdapter):
         self._typing_state: dict[str, tuple[bool, float]] = {}
         self._run_counter = 0
         self._inbound_window: dict[str, deque[float]] = {}
+        self._completed_run_ids: set[str] = set()
+        self._completed_run_order: deque[str] = deque()
+        self._auth_failed = False
 
     async def connect(self) -> bool:
         await self._connection.start()
@@ -193,6 +198,8 @@ class ClawChatAdapter(BasePlatformAdapter):
         return False
 
     async def _on_state_change(self, state: ConnectionState) -> None:
+        if state == ConnectionState.AUTH_FAILED:
+            self._auth_failed = True
         logger.info("clawchat state -> %s", state.value)
 
     def _trace_inbound_frame(self, frame: dict[str, Any]) -> None:
@@ -277,7 +284,10 @@ class ClawChatAdapter(BasePlatformAdapter):
     async def _on_message(self, frame: dict[str, Any]) -> None:
         self._trace_inbound_frame(frame)
         if frame.get("event") == "interaction.submit":
-            await self._handle_interaction_submit(frame)
+            logger.info(
+                "clawchat interaction submit ignored chat_id=%s reason=ws_control_event",
+                frame.get("chat_id"),
+            )
             return
         inbound = parse_inbound_message(frame, self._clawchat_config)
         if inbound is None:
@@ -324,9 +334,11 @@ class ClawChatAdapter(BasePlatformAdapter):
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
         )
+        channel_prompt = self._compose_channel_prompt(inbound)
         if self._should_attach_activation_skill(inbound.text):
             event.auto_skill = "clawchat"
-            event.channel_prompt = _CLAWCHAT_SKILL_PROMPT
+        if channel_prompt:
+            event.channel_prompt = channel_prompt
         logger.info(
             "clawchat dispatch to hermes chat_id=%s user_id=%s text_len=%d media=%d downloaded=%d reply_to=%s",
             inbound.chat_id,
@@ -343,49 +355,6 @@ class ClawChatAdapter(BasePlatformAdapter):
             inbound.sender_id,
         )
 
-    async def _handle_interaction_submit(self, frame: dict[str, Any]) -> None:
-        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
-        text = self._interaction_submit_text(payload)
-        if text is None:
-            logger.warning(
-                "clawchat interaction submit dropped chat_id=%s reason=unsupported_action",
-                frame.get("chat_id"),
-            )
-            return
-        sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
-        chat_id = str(frame.get("chat_id") or "")
-        sender_id = str(sender.get("id") or "")
-        source = self.build_source(
-            chat_id=chat_id,
-            user_id=sender_id,
-            chat_name=chat_id,
-            chat_type=self._map_source_chat_type(str(frame.get("chat_type") or "direct")),
-        )
-        event = MessageEvent(
-            text=text,
-            message_type=MessageType.TEXT,
-            source=source,
-            raw_message={
-                "clawchat_chat_type": frame.get("chat_type"),
-                "clawchat_interaction_submit": payload,
-                "clawchat_raw": frame,
-            },
-        )
-        await self.handle_message(event)
-
-    def _interaction_submit_text(self, payload: dict[str, Any]) -> str | None:
-        action_id = str(payload.get("action_id") or "").strip().lower()
-        action_payload = payload.get("action_payload")
-        decision = ""
-        if isinstance(action_payload, dict):
-            decision = str(action_payload.get("decision") or "").strip().lower()
-        value = decision or action_id
-        if value in {"approve", "approved", "allow", "yes"}:
-            return "/approve"
-        if value in {"deny", "denied", "reject", "rejected", "no"}:
-            return "/deny"
-        return None
-
     def _should_attach_activation_skill(self, text: str) -> bool:
         if not text:
             return False
@@ -393,6 +362,16 @@ class ClawChatAdapter(BasePlatformAdapter):
         if not _ACTIVATION_INTENT_RE.search(normalized):
             return False
         return True
+
+    def _compose_channel_prompt(self, inbound: InboundMessage) -> str | None:
+        prompts: list[str] = []
+        if inbound.chat_type == "group":
+            group_prompt = build_group_channel_prompt()
+            if group_prompt:
+                prompts.append(group_prompt)
+        if self._should_attach_activation_skill(inbound.text):
+            prompts.append(_CLAWCHAT_SKILL_PROMPT)
+        return "\n\n".join(prompts) or None
 
     async def _download_inbound_media(self, inbound: InboundMessage) -> list[Any]:
         if not inbound.media_urls:
@@ -446,7 +425,8 @@ class ClawChatAdapter(BasePlatformAdapter):
                     message_id=message_id,
                     fragments=fragments,
                     reply_to_message_id=reply_to,
-                )
+                ),
+                wait_for_ack=True,
             )
             logger.info(
                 "clawchat send static reply queued chat_id=%s message_id=%s fragments=%d",
@@ -504,6 +484,13 @@ class ClawChatAdapter(BasePlatformAdapter):
     ) -> SendResult:
         run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
+            if message_id and message_id in self._completed_run_ids:
+                logger.info(
+                    "clawchat edit skipped chat_id=%s message_id=%s reason=run_already_complete",
+                    chat_id,
+                    message_id,
+                )
+                return SendResult(success=True, message_id=message_id)
             logger.warning(
                 "clawchat edit skipped chat_id=%s message_id=%s reason=no_active_run",
                 chat_id,
@@ -548,6 +535,13 @@ class ClawChatAdapter(BasePlatformAdapter):
     ) -> None:
         run = self._resolve_active_run(chat_id=chat_id, message_id=message_id)
         if run is None:
+            if message_id and message_id in self._completed_run_ids:
+                logger.info(
+                    "clawchat run complete skipped chat_id=%s message_id=%s reason=run_already_complete",
+                    chat_id,
+                    message_id,
+                )
+                return
             logger.warning(
                 "clawchat run complete skipped chat_id=%s message_id=%s reason=no_active_run",
                 chat_id,
@@ -555,6 +549,7 @@ class ClawChatAdapter(BasePlatformAdapter):
             )
             return
         self._discard_run(run)
+        self._remember_completed_run(run.message_id)
         logger.info(
             "clawchat run complete chat_id=%s message_id=%s final_len=%d",
             chat_id,
@@ -587,21 +582,20 @@ class ClawChatAdapter(BasePlatformAdapter):
                 sequence=run.sequence,
             )
         )
-        await self._connection.send_frame(
-            build_message_reply_event(
-                chat_id=chat_id,
-                chat_type=run.chat_type,
-                message_id=run.message_id,
-                fragments=await self._build_fragments(run.last_text),
-                reply_to_message_id=run.reply_to_message_id,
-                include_message_id=True,
-            )
-        )
         logger.info(
             "clawchat stream done queued chat_id=%s message_id=%s",
             chat_id,
             run.message_id,
         )
+
+    def _remember_completed_run(self, message_id: str) -> None:
+        if message_id in self._completed_run_ids:
+            return
+        self._completed_run_ids.add(message_id)
+        self._completed_run_order.append(message_id)
+        while len(self._completed_run_order) > COMPLETED_RUN_CACHE_MAX:
+            old_message_id = self._completed_run_order.popleft()
+            self._completed_run_ids.discard(old_message_id)
 
     async def on_run_failed(
         self,

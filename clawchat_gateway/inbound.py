@@ -78,7 +78,9 @@ def parse_inbound_message(
     if context is None:
         return None
 
-    chat_type = envelope.get("chat_type") or "direct"
+    chat_type = envelope.get("chat_type")
+    if chat_type not in {"direct", "group"}:
+        return None
 
     if chat_type == "group" and config.group_mode == "mention":
         mentions = context.get("mentions") or []

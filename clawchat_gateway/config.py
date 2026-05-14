@@ -52,11 +52,9 @@ def _get_env(*names: str) -> str:
     return ""
 
 
-def _get_alias(data: dict[str, Any], snake: str, camel: str, default: Any = None) -> Any:
-    if snake in data:
-        return data[snake]
-    if camel in data:
-        return data[camel]
+def _get_config_value(data: dict[str, Any], key: str, default: Any = None) -> Any:
+    if key in data:
+        return data[key]
     return default
 
 
@@ -68,7 +66,7 @@ class ClawChatConfig:
     refresh_token: str = ""
     user_id: str = ""
     reply_mode: str = "stream"
-    group_mode: str = "mention"
+    group_mode: str = "all"
     stream_flush_interval_ms: int = 250
     stream_min_chunk_chars: int = 40
     stream_max_buffer_chars: int = 2000
@@ -95,78 +93,70 @@ class ClawChatConfig:
         media_local_roots = (
             tuple(p.strip() for p in media_roots_env.split(os.pathsep) if p.strip())
             if media_roots_env
-            else _get_alias(extra, "media_local_roots", "mediaLocalRoots", ())
+            else _get_config_value(extra, "media_local_roots", ())
         )
         show_tools_output = bool(
-            _get_alias(extra, "show_tools_output", "showToolsOutput", False)
+            _get_config_value(extra, "show_tools_output", False)
         )
         show_tool_progress = bool(
-            _get_alias(
+            _get_config_value(
                 extra,
                 "show_tool_progress",
-                "showToolProgress",
                 show_tools_output,
             )
         )
         return cls(
             websocket_url=_get_env("CLAWCHAT_WEBSOCKET_URL", "CLAWCHAT_WS_URL")
-            or _get_alias(extra, "websocket_url", "websocketUrl", ""),
+            or _get_config_value(extra, "websocket_url", ""),
             base_url=_get_env("CLAWCHAT_BASE_URL")
-            or _get_alias(extra, "base_url", "baseUrl", ""),
+            or _get_config_value(extra, "base_url", ""),
             token=_get_env("CLAWCHAT_TOKEN") or extra.get("token") or "",
             refresh_token=_get_env("CLAWCHAT_REFRESH_TOKEN")
-            or _get_alias(extra, "refresh_token", "refreshToken", ""),
+            or _get_config_value(extra, "refresh_token", ""),
             user_id=_get_env("CLAWCHAT_USER_ID")
-            or _get_alias(extra, "user_id", "userId", ""),
+            or _get_config_value(extra, "user_id", ""),
             reply_mode=_get_env("CLAWCHAT_REPLY_MODE")
-            or _get_alias(extra, "reply_mode", "replyMode", "stream"),
+            or _get_config_value(extra, "reply_mode", "stream"),
             group_mode=_get_env("CLAWCHAT_GROUP_MODE")
-            or _get_alias(extra, "group_mode", "groupMode", "mention"),
-            stream_flush_interval_ms=_get_alias(
-                stream, "flush_interval_ms", "flushIntervalMs", 250
+            or _get_config_value(extra, "group_mode", "all"),
+            stream_flush_interval_ms=_get_config_value(stream, "flush_interval_ms", 250),
+            stream_min_chunk_chars=_get_config_value(stream, "min_chunk_chars", 40),
+            stream_max_buffer_chars=_get_config_value(stream, "max_buffer_chars", 2000),
+            reconnect_initial_delay_ms=_get_config_value(
+                extra, "reconnect_initial_delay_ms", 500
             ),
-            stream_min_chunk_chars=_get_alias(
-                stream, "min_chunk_chars", "minChunkChars", 40
+            reconnect_max_delay_ms=_get_config_value(
+                extra, "reconnect_max_delay_ms", 15000
             ),
-            stream_max_buffer_chars=_get_alias(
-                stream, "max_buffer_chars", "maxBufferChars", 2000
+            reconnect_jitter_ratio=_get_config_value(
+                extra, "reconnect_jitter_ratio", 0.3
             ),
-            reconnect_initial_delay_ms=_get_alias(
-                extra, "reconnect_initial_delay_ms", "reconnectInitialDelayMs", 500
+            reconnect_max_retries=_get_config_value(
+                extra, "reconnect_max_retries", float("inf")
             ),
-            reconnect_max_delay_ms=_get_alias(
-                extra, "reconnect_max_delay_ms", "reconnectMaxDelayMs", 15000
+            heartbeat_interval_ms=_get_config_value(
+                extra, "heartbeat_interval_ms", 20000
             ),
-            reconnect_jitter_ratio=_get_alias(
-                extra, "reconnect_jitter_ratio", "reconnectJitterRatio", 0.3
+            heartbeat_timeout_ms=_get_config_value(
+                extra, "heartbeat_timeout_ms", 10000
             ),
-            reconnect_max_retries=_get_alias(
-                extra, "reconnect_max_retries", "reconnectMaxRetries", float("inf")
-            ),
-            heartbeat_interval_ms=_get_alias(
-                extra, "heartbeat_interval_ms", "heartbeatIntervalMs", 20000
-            ),
-            heartbeat_timeout_ms=_get_alias(
-                extra, "heartbeat_timeout_ms", "heartbeatTimeoutMs", 10000
-            ),
-            ack_timeout_ms=_get_alias(extra, "ack_timeout_ms", "ackTimeoutMs", 15000),
-            ack_auto_resend_on_timeout=_get_alias(
-                extra, "ack_auto_resend_on_timeout", "ackAutoResendOnTimeout", False
+            ack_timeout_ms=_get_config_value(extra, "ack_timeout_ms", 15000),
+            ack_auto_resend_on_timeout=_get_config_value(
+                extra, "ack_auto_resend_on_timeout", False
             ),
             media_local_roots=tuple(media_local_roots),
-            media_download_dir=_get_alias(
-                extra, "media_download_dir", "mediaDownloadDir", "/tmp/clawchat-media"
+            media_download_dir=_get_config_value(
+                extra, "media_download_dir", "/tmp/clawchat-media"
             ),
             show_tools_output=show_tools_output,
             show_tool_progress=show_tool_progress,
             show_think_output=bool(
-                _get_alias(extra, "show_think_output", "showThinkOutput", False)
+                _get_config_value(extra, "show_think_output", False)
             ),
             enable_rich_interactions=bool(
-                _get_alias(
+                _get_config_value(
                     extra,
                     "enable_rich_interactions",
-                    "enableRichInteractions",
                     False,
                 )
             ),

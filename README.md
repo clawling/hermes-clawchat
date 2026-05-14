@@ -17,16 +17,14 @@ docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes pl
 Defaults:
 
 - `HERMES_HOME`: `~/.hermes`
-- `HERMES_DIR`: `~/.hermes/hermes-agent`
 - plugin source: `$HERMES_HOME/plugins/clawchat`
 
 The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx.register_platform(...)`; no Hermes source patch or Node install shim is needed on v0.12.0+.
 
 ## Tools
 
-Hermes registers seven ClawChat tools:
+Hermes registers six ClawChat tools:
 
-- `clawchat_activate` — exchange an activation code for ClawChat credentials and persist them into Hermes config.
 - `clawchat_get_account_profile` — fetch the configured ClawChat account profile.
 - `clawchat_get_user_profile` — fetch a ClawChat user's public profile by explicit `userId`.
 - `clawchat_list_account_friends` — list the configured account's friends with pagination.
@@ -38,7 +36,11 @@ Hermes registers seven ClawChat tools:
 
 ```bash
 # Activate (one-time)
-python -m clawchat_gateway.activate <CODE>
+hermes gateway setup
+# or, for scriptable activation:
+hermes clawchat activate <CODE>
+# or, inside a Hermes session:
+/clawchat-activate <CODE>
 
 # Inspect / update
 python -m clawchat_gateway.profile get
@@ -56,19 +58,25 @@ Hermes v0.12.0+ loads messaging adapters as pluggable gateway platforms. ClawCha
 ```bash
 hermes plugins install clawling/hermes-clawchat
 hermes plugins enable clawchat
-
-HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-PLUGIN_DIR="$HERMES_HOME/plugins/clawchat"
-PYTHONPATH="$PLUGIN_DIR:${PYTHONPATH:-}" \
-python -m clawchat_gateway.activate <CODE>
+hermes gateway setup
 ```
 
-Activation writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env`, stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`, and schedules `hermes gateway restart` so the gateway reloads the enabled platform and credentials.
+`hermes gateway setup` is the preferred interactive flow on Hermes builds that expose plugin platform setup functions. It prompts for the ClawChat activation code and optional API base URL, saves the platform config, and then lets Hermes finish its normal gateway service flow: restart if the service is already running, start if it is installed but stopped, or install/start the service if needed.
+
+For non-interactive installs, use the plugin CLI command registered by Hermes:
+
+```bash
+hermes clawchat activate <CODE>
+```
+
+That command writes `CLAWCHAT_TOKEN` and `CLAWCHAT_REFRESH_TOKEN` to `$HERMES_HOME/.env` and stores non-secret platform settings under `platforms.clawchat.extra` in `config.yaml`.
+
+Group chats default to `group_mode: all`, so every inbound group message is eligible for a reply. Set `CLAWCHAT_GROUP_MODE=mention` or `platforms.clawchat.extra.group_mode: mention` to require an @mention. Group-only covenant guidance is injected through Hermes' per-event `channel_prompt`; direct chats do not receive that group covenant.
 
 For Docker:
 
 ```bash
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins install clawling/hermes-clawchat --force'
 docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes plugins enable clawchat'
-docker exec hermes sh -lc 'HERMES_HOME=/opt/data HERMES_DIR=/opt/hermes PYTHONPATH=/opt/data/plugins/clawchat /opt/hermes/.venv/bin/python -m clawchat_gateway.activate <CODE>'
+docker exec hermes sh -lc 'HERMES_HOME=/opt/data /opt/hermes/.venv/bin/hermes clawchat activate <CODE>'
 ```

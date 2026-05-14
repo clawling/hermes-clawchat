@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import yaml
+
+
+def _hermes_home() -> Path:
+    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+
+
+def _env_file() -> Path:
+    return _hermes_home() / ".env"
+
+
+def configure_clawchat_allow_all() -> bool:
+    """Allow ClawChat users by default without opening every gateway platform."""
+    env_path = _env_file()
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+    changed = False
+    found = False
+
+    for idx, line in enumerate(lines):
+        if line.startswith("CLAWCHAT_ALLOW_ALL_USERS="):
+            found = True
+            if line != "CLAWCHAT_ALLOW_ALL_USERS=true":
+                lines[idx] = "CLAWCHAT_ALLOW_ALL_USERS=true"
+                changed = True
+            break
+
+    if not found:
+        lines.append("CLAWCHAT_ALLOW_ALL_USERS=true")
+        changed = True
+
+    if changed:
+        env_path.write_text("\n".join(lines) + "\n")
+    return changed
+
+
+def configure_clawchat_streaming() -> bool:
+    config_path = _hermes_home() / "config.yaml"
+    if config_path.exists():
+        try:
+            config = yaml.safe_load(config_path.read_text()) or {}
+        except Exception:
+            config = {}
+    else:
+        config = {}
+
+    changed = False
+    platforms = config.setdefault("platforms", {})
+    clawchat = platforms.setdefault("clawchat", {})
+    extra = clawchat.setdefault("extra", {})
+    if extra.get("reply_mode") != "stream":
+        extra["reply_mode"] = "stream"
+        changed = True
+    for key in ("show_tools_output", "show_think_output"):
+        if extra.get(key) is not False:
+            extra[key] = False
+            changed = True
+
+    streaming = config.setdefault("streaming", {})
+    stream_defaults = {
+        "enabled": True,
+        "transport": "edit",
+        "edit_interval": 0.25,
+        "buffer_threshold": 16,
+    }
+    for key, value in stream_defaults.items():
+        if streaming.get(key) != value:
+            streaming[key] = value
+            changed = True
+
+    display = config.setdefault("display", {})
+    display_platforms = display.setdefault("platforms", {})
+    clawchat_display = display_platforms.setdefault("clawchat", {})
+    display_defaults = {
+        "tool_progress": "off",
+        "show_reasoning": False,
+    }
+    for key, value in display_defaults.items():
+        if clawchat_display.get(key) != value:
+            clawchat_display[key] = value
+            changed = True
+
+    if changed:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(yaml.safe_dump(config, allow_unicode=False, sort_keys=False))
+    return changed

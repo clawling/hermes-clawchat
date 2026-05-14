@@ -21,6 +21,8 @@ class _Ctx:
         self.tools = {}
         self.skills = {}
         self.hooks = {}
+        self.cli_commands = {}
+        self.commands = {}
 
     def register_tool(self, name, toolset, schema, handler, **kwargs):
         self.tools[name] = {"toolset": toolset, "schema": schema, "handler": handler, **kwargs}
@@ -30,6 +32,30 @@ class _Ctx:
 
     def register_hook(self, name, handler):
         self.hooks.setdefault(name, []).append(handler)
+
+    def register_cli_command(
+        self,
+        name,
+        help,
+        setup_fn,
+        handler_fn=None,
+        description="",
+    ):
+        self.cli_commands[name] = {
+            "name": name,
+            "help": help,
+            "setup_fn": setup_fn,
+            "handler_fn": handler_fn,
+            "description": description,
+        }
+
+    def register_command(self, name, handler, description="", args_hint=""):
+        self.commands[name] = {
+            "name": name,
+            "handler": handler,
+            "description": description,
+            "args_hint": args_hint,
+        }
 
 
 class _PlatformCtx(_Ctx):
@@ -70,11 +96,6 @@ def _load_plugin_module():
 
 def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -84,6 +105,7 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     assert platform["label"] == "ClawChat"
     assert callable(platform["adapter_factory"])
     assert callable(platform["check_fn"])
+    assert callable(platform["setup_fn"])
     assert callable(platform["validate_config"])
     assert callable(platform["is_connected"])
     assert platform["required_env"] == ["CLAWCHAT_TOKEN", "CLAWCHAT_REFRESH_TOKEN"]
@@ -97,13 +119,24 @@ def test_plugin_registers_clawchat_platform_with_registry(monkeypatch):
     assert "websocket" not in platform["platform_hint"].lower()
 
 
+def test_plugin_platform_setup_fn_delegates_to_gateway_setup_without_installer(monkeypatch):
+    module = _load_plugin_module()
+    monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
+
+    from clawchat_gateway import setup
+
+    calls = []
+    monkeypatch.setattr(setup, "setup_clawchat_platform", lambda: calls.append("setup"))
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+    ctx.platforms["clawchat"]["setup_fn"]()
+
+    assert calls == ["setup"]
+
+
 def test_plugin_platform_check_only_verifies_dependencies(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     monkeypatch.setattr(module, "_clawchat_dependencies_available", lambda: True)
     monkeypatch.setattr(
@@ -139,11 +172,6 @@ def test_plugin_platform_validation_falls_back_to_home_config(monkeypatch, tmp_p
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -175,11 +203,6 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    monkeypatch.setattr(
-        module,
-        "_install_gateway",
-        lambda: (_ for _ in ()).throw(AssertionError("installer should not run")),
-    )
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     ctx = _PlatformCtx()
 
@@ -192,13 +215,11 @@ def test_plugin_adapter_factory_merges_home_config(monkeypatch, tmp_path):
 
 def test_plugin_registers_all_tools(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
     assert set(ctx.tools) == {
-        "clawchat_activate",
         "clawchat_get_account_profile",
         "clawchat_get_user_profile",
         "clawchat_list_account_friends",
@@ -209,10 +230,45 @@ def test_plugin_registers_all_tools(monkeypatch):
     assert all(ctx.tools[name]["is_async"] is True for name in ctx.tools)
 
 
+def test_plugin_tool_registration_is_delegated_to_gateway_module():
+    module = _load_plugin_module()
+
+    from clawchat_gateway import plugin_tools
+
+    assert callable(plugin_tools.register_tools)
+    assert not hasattr(module, "_register_tools")
+
+
+def test_plugin_registers_native_clawchat_cli_command(monkeypatch):
+    module = _load_plugin_module()
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+
+    command = ctx.cli_commands["clawchat"]
+    assert command["help"] == "Manage ClawChat integration"
+    assert command["description"] == (
+        "Activate and manage the ClawChat Hermes gateway integration."
+    )
+    assert callable(command["setup_fn"])
+    assert callable(command["handler_fn"])
+
+
+def test_plugin_registers_clawchat_activate_slash_command(monkeypatch):
+    module = _load_plugin_module()
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+
+    command = ctx.commands["clawchat-activate"]
+    assert command["description"] == "Activate ClawChat with an activation code."
+    assert command["args_hint"] == "CODE [--base-url URL] [--no-restart]"
+    assert callable(command["handler"])
+
+
 def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -222,8 +278,7 @@ def test_plugin_tool_descriptions_forbid_execute_fallbacks(monkeypatch):
 
 def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
 
     module.register(ctx)
 
@@ -257,8 +312,9 @@ def test_clawchat_skill_distinguishes_media_delivery_from_media_link_uploads():
 
 
 def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
-    module = _load_plugin_module()
+    _load_plugin_module()
 
+    from clawchat_gateway import plugin_tools
     from clawchat_gateway import tools
 
     async def fake_get_account_profile():
@@ -266,33 +322,18 @@ def test_plugin_tool_handlers_return_json_strings_for_hermes_v012(monkeypatch):
 
     monkeypatch.setattr(tools, "get_account_profile", fake_get_account_profile)
 
-    result = asyncio.run(module._handle_clawchat_get_account_profile({}, task_id="trace-123"))
+    result = asyncio.run(
+        plugin_tools.handle_clawchat_get_account_profile({}, task_id="trace-123")
+    )
 
     assert isinstance(result, str)
     assert "测试账号" in result
     assert json.loads(result) == {"ok": True, "nickname": "测试账号"}
 
 
-def test_activate_schema_triggers_on_chinese_activation_code_phrase(monkeypatch):
-    module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
-    module.register(ctx)
-
-    schema = ctx.tools["clawchat_activate"]["schema"]
-    description = schema["description"]
-    code_description = schema["parameters"]["properties"]["code"]["description"]
-
-    assert "clawchat 的激活码是 R4E1IW" in description
-    assert "Extract the code verbatim" in description
-    assert "connect-codes" in description
-    assert "clawchat 的激活码是" in code_description
-
-
 def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):
     module = _load_plugin_module()
-    monkeypatch.setattr(module, "_install_gateway", lambda: None)
-    ctx = _Ctx()
+    ctx = _PlatformCtx()
     module.register(ctx)
 
     result = asyncio.run(ctx.tools["clawchat_upload_avatar_image"]["handler"]({"filePath": "relative.png"}))
@@ -300,3 +341,16 @@ def test_plugin_upload_avatar_image_rejects_relative_path(monkeypatch):
 
     assert payload["error"] == "validation"
     assert "absolute local path" in payload["message"]
+
+
+def test_plugin_requires_platform_registry(monkeypatch):
+    module = _load_plugin_module()
+    monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
+
+    try:
+        module.register(_Ctx())
+    except RuntimeError as exc:
+        assert "ctx.register_platform" in str(exc)
+        assert "Hermes v0.12.0+" in str(exc)
+    else:
+        raise AssertionError("register() should require the Hermes platform registry")

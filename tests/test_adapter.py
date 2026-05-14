@@ -12,6 +12,7 @@ from clawchat_gateway.stream_buffer import compute_delta
 class FakeConnection:
     def __init__(self) -> None:
         self.sent_frames: list[dict] = []
+        self.wait_for_ack: list[bool] = []
         self.started = False
         self.stopped = False
 
@@ -21,8 +22,9 @@ class FakeConnection:
     async def stop(self) -> None:
         self.stopped = True
 
-    async def send_frame(self, frame: dict) -> None:
+    async def send_frame(self, frame: dict, *, wait_for_ack: bool = False) -> None:
         self.sent_frames.append(frame)
+        self.wait_for_ack.append(wait_for_ack)
 
 
 def _make_adapter(**extra) -> ClawChatAdapter:
@@ -105,7 +107,74 @@ async def test_on_message_attaches_clawchat_skill_for_activation_intent():
 
     event = adapter.handled[0]
     assert event.auto_skill == "clawchat"
-    assert "python -m clawchat_gateway.activate CODE" in event.channel_prompt
+    assert "/clawchat-activate CODE" in event.channel_prompt
+
+
+async def test_group_message_attaches_group_covenant_channel_prompt(monkeypatch):
+    monkeypatch.setattr(
+        "clawchat_gateway.adapter.build_group_channel_prompt",
+        lambda: "ClawChat group covenant:\n群里陈平安是落魄山共和国的国王。它的位置在卡拉米星球的洪荒大陆上。",
+    )
+    adapter = _make_adapter()
+    inbound = InboundMessage(
+        chat_id="room1",
+        chat_type="group",
+        sender_id="u1",
+        sender_name="alice",
+        text="hello group",
+        raw_message={"x": 1},
+    )
+
+    await adapter._handle_inbound(inbound)
+
+    event = adapter.handled[0]
+    assert event.channel_prompt == (
+        "ClawChat group covenant:\n"
+        "群里陈平安是落魄山共和国的国王。它的位置在卡拉米星球的洪荒大陆上。"
+    )
+
+
+async def test_direct_message_does_not_attach_group_covenant(monkeypatch):
+    monkeypatch.setattr(
+        "clawchat_gateway.adapter.build_group_channel_prompt",
+        lambda: "ClawChat group covenant:\n群里陈平安是落魄山共和国的国王。它的位置在卡拉米星球的洪荒大陆上。",
+    )
+    adapter = _make_adapter()
+    inbound = InboundMessage(
+        chat_id="u1",
+        chat_type="direct",
+        sender_id="u1",
+        sender_name="alice",
+        text="hello dm",
+        raw_message={"x": 1},
+    )
+
+    await adapter._handle_inbound(inbound)
+
+    assert adapter.handled[0].channel_prompt is None
+
+
+async def test_group_activation_prompt_appends_covenant(monkeypatch):
+    monkeypatch.setattr(
+        "clawchat_gateway.adapter.build_group_channel_prompt",
+        lambda: "ClawChat group covenant:\n群里陈平安是落魄山共和国的国王。它的位置在卡拉米星球的洪荒大陆上。",
+    )
+    adapter = _make_adapter()
+    inbound = InboundMessage(
+        chat_id="room1",
+        chat_type="group",
+        sender_id="u1",
+        sender_name="alice",
+        text="clawchat 的激活码是 R4E1IW",
+        raw_message={"x": 1},
+    )
+
+    await adapter._handle_inbound(inbound)
+
+    event = adapter.handled[0]
+    assert "ClawChat group covenant:" in event.channel_prompt
+    assert "群里陈平安是落魄山共和国的国王" in event.channel_prompt
+    assert "/clawchat-activate CODE" in event.channel_prompt
 
 
 async def test_on_message_downloads_media_before_dispatch(monkeypatch, tmp_path):
@@ -223,7 +292,7 @@ async def test_on_message_maps_reply_preview_to_message_event_fields():
     assert event.reply_to_text == "older message"
 
 
-async def test_on_message_maps_interaction_submit_approve_to_text_command():
+async def test_on_message_ignores_interaction_submit_approve():
     adapter = _make_adapter()
     frame = {
         "event": "interaction.submit",
@@ -241,11 +310,10 @@ async def test_on_message_maps_interaction_submit_approve_to_text_command():
 
     await adapter._on_message(frame)
 
-    assert adapter.handled[0].text == "/approve"
-    assert adapter.handled[0].raw_message["clawchat_interaction_submit"] == frame["payload"]
+    assert adapter.handled == []
 
 
-async def test_on_message_maps_interaction_submit_deny_to_text_command():
+async def test_on_message_ignores_interaction_submit_deny():
     adapter = _make_adapter()
     frame = {
         "event": "interaction.submit",
@@ -263,7 +331,7 @@ async def test_on_message_maps_interaction_submit_deny_to_text_command():
 
     await adapter._on_message(frame)
 
-    assert adapter.handled[0].text == "/deny"
+    assert adapter.handled == []
 
 
 async def test_send_emits_message_reply_for_static_mode():
@@ -273,6 +341,7 @@ async def test_send_emits_message_reply_for_static_mode():
 
     assert result.success is True
     assert adapter._connection.sent_frames[0]["event"] == "message.reply"
+    assert adapter._connection.wait_for_ack == [True]
     assert adapter._connection.sent_frames[0]["version"] == "2"
     assert "message_id" not in adapter._connection.sent_frames[0]["payload"]
     assert adapter._connection.sent_frames[0]["payload"]["message"]["body"]["fragments"] == [
@@ -633,7 +702,7 @@ async def test_edit_message_targets_run_by_message_id_with_overlapping_streams()
     assert adapter._active_runs_by_id[second.message_id].last_text == "second"
 
 
-async def test_edit_message_with_finalize_emits_done_and_reply():
+async def test_edit_message_with_finalize_emits_done_only():
     adapter = _make_adapter(reply_mode="stream")
     first = await adapter.send(chat_id="u1", content="hello")
     adapter._connection.sent_frames.clear()
@@ -649,13 +718,56 @@ async def test_edit_message_with_finalize_emits_done_and_reply():
     assert [frame["event"] for frame in adapter._connection.sent_frames] == [
         "message.add",
         "message.done",
-        "message.reply",
     ]
     assert adapter._connection.sent_frames[0]["payload"]["fragments"][0]["delta"] == " world"
     assert adapter._connection.sent_frames[1]["payload"]["fragments"] == [
         {"kind": "text", "text": "hello world"}
     ]
     assert first.message_id not in adapter._active_runs_by_id
+
+
+async def test_edit_message_after_finalize_is_idempotent_success(caplog):
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hello")
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hello world",
+        finalize=True,
+    )
+    adapter._connection.sent_frames.clear()
+
+    with caplog.at_level(logging.WARNING, logger="clawchat_gateway.adapter"):
+        result = await adapter.edit_message(
+            chat_id="u1",
+            message_id=first.message_id or "",
+            content="hello world",
+        )
+
+    assert result.success is True
+    assert result.message_id == first.message_id
+    assert adapter._connection.sent_frames == []
+    assert caplog.records == []
+
+
+async def test_duplicate_on_run_complete_after_finalize_is_idempotent():
+    adapter = _make_adapter(reply_mode="stream")
+    first = await adapter.send(chat_id="u1", content="hello")
+    await adapter.edit_message(
+        chat_id="u1",
+        message_id=first.message_id or "",
+        content="hello world",
+        finalize=True,
+    )
+    adapter._connection.sent_frames.clear()
+
+    await adapter.on_run_complete(
+        chat_id="u1",
+        final_text="hello world",
+        message_id=first.message_id,
+    )
+
+    assert adapter._connection.sent_frames == []
 
 
 async def test_v012_stream_edits_strip_cursor_and_finalize_lifecycle():
@@ -680,12 +792,10 @@ async def test_v012_stream_edits_strip_cursor_and_finalize_lifecycle():
         "message.add",
         "message.add",
         "message.done",
-        "message.reply",
     ]
     first_add = adapter._connection.sent_frames[1]["payload"]["fragments"][0]
     second_add = adapter._connection.sent_frames[2]["payload"]["fragments"][0]
     done = adapter._connection.sent_frames[3]
-    reply = adapter._connection.sent_frames[4]
     assert first_add == {"kind": "text", "text": "Hey! I'm", "delta": "Hey! I'm"}
     assert second_add == {
         "kind": "text",
@@ -693,9 +803,6 @@ async def test_v012_stream_edits_strip_cursor_and_finalize_lifecycle():
         "delta": " doing well",
     }
     assert done["payload"]["fragments"] == [{"kind": "text", "text": "Hey! I'm doing well"}]
-    assert reply["payload"]["message"]["body"]["fragments"] == [
-        {"kind": "text", "text": "Hey! I'm doing well"}
-    ]
     assert all(
         "▉" not in str(frame)
         for frame in adapter._connection.sent_frames
@@ -719,7 +826,7 @@ async def test_edit_message_ignores_unknown_kwargs():
     assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.add"]
 
 
-async def test_on_run_complete_emits_message_done_without_static_reply():
+async def test_on_run_complete_emits_message_done_without_trailing_reply():
     adapter = _make_adapter(reply_mode="stream")
     first = await adapter.send(chat_id="u1", content="hello")
     adapter._connection.sent_frames.clear()
@@ -729,14 +836,9 @@ async def test_on_run_complete_emits_message_done_without_static_reply():
     assert [frame["event"] for frame in adapter._connection.sent_frames] == [
         "message.add",
         "message.done",
-        "message.reply",
     ]
     assert adapter._connection.sent_frames[1]["payload"]["message_id"] == first.message_id
     assert adapter._connection.sent_frames[1]["payload"]["fragments"] == [
-        {"kind": "text", "text": "hello world"}
-    ]
-    assert adapter._connection.sent_frames[2]["payload"]["message_id"] == first.message_id
-    assert adapter._connection.sent_frames[2]["payload"]["message"]["body"]["fragments"] == [
         {"kind": "text", "text": "hello world"}
     ]
     assert first.message_id not in adapter._active_runs_by_id
@@ -772,7 +874,6 @@ async def test_on_run_complete_finalizes_requested_run_during_overlap():
     assert [frame["event"] for frame in adapter._connection.sent_frames] == [
         "message.add",
         "message.done",
-        "message.reply",
     ]
     assert adapter._connection.sent_frames[1]["payload"]["message_id"] == first.message_id
     assert first.message_id not in adapter._active_runs_by_id

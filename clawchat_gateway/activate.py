@@ -1,78 +1,44 @@
 from __future__ import annotations
 
-import argparse
-import asyncio
-import json
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-import yaml
+try:
+    from hermes_cli.config import (
+        get_config_path,
+        get_env_path,
+        read_raw_config,
+        remove_env_value,
+        save_config,
+        save_env_value,
+    )
+except Exception as exc:
+    raise RuntimeError(
+        "ClawChat activation requires hermes_cli.config helpers; "
+        "run activation through Hermes so config writes use the official API."
+    ) from exc
 
 from clawchat_gateway.api_client import DEFAULT_BASE_URL, DEFAULT_WEBSOCKET_URL, ClawChatApiClient
-
-
-def _hermes_home() -> Path:
-    import os
-
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+from clawchat_gateway.restart import schedule_gateway_restart
 
 
 def _load_config() -> tuple[Path, dict[str, Any]]:
-    config_path = _hermes_home() / "config.yaml"
-    if not config_path.exists():
-        return config_path, {}
-    try:
-        return config_path, yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return config_path, {}
+    config_path = Path(get_config_path())
+    return config_path, read_raw_config() or {}
 
 
-def _write_config(config_path: Path, config: dict[str, Any]) -> None:
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        yaml.safe_dump(config, allow_unicode=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-
-def _env_path() -> Path:
-    return _hermes_home() / ".env"
-
-
-def _validate_env_value(key: str, value: str) -> str:
-    if "\n" in value or "\r" in value:
-        raise ValueError(f"{key} cannot contain newlines")
-    return value
+def _write_config(_config_path: Path, config: dict[str, Any]) -> None:
+    save_config(config)
 
 
 def _write_env_values(values: dict[str, str | None]) -> Path:
-    path = _env_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    pending = {
-        key: None if value is None else _validate_env_value(key, str(value))
-        for key, value in values.items()
-    }
-    emitted: set[str] = set()
-    next_lines: list[str] = []
-
-    for line in lines:
-        key = line.split("=", 1)[0] if "=" in line else ""
-        if key not in pending:
-            next_lines.append(line)
-            continue
-        value = pending[key]
-        if value is not None and key not in emitted:
-            next_lines.append(f"{key}={value}")
-            emitted.add(key)
-
-    for key, value in pending.items():
-        if value is not None and key not in emitted:
-            next_lines.append(f"{key}={value}")
-
-    path.write_text("\n".join(next_lines) + ("\n" if next_lines else ""), encoding="utf-8")
-    return path
+    for key, value in values.items():
+        if value is None:
+            remove_env_value(key)
+        else:
+            save_env_value(key, str(value))
+    return Path(get_env_path())
 
 
 def _derive_websocket_url(base_url: str) -> str:
@@ -80,7 +46,7 @@ def _derive_websocket_url(base_url: str) -> str:
     if parsed.netloc == "app.clawling.com":
         return DEFAULT_WEBSOCKET_URL
     scheme = "wss" if parsed.scheme == "https" else "ws"
-    return urlunparse((scheme, parsed.netloc, "/v1/ws", "", "", ""))
+    return urlunparse((scheme, parsed.netloc, "/ws", "", "", ""))
 
 
 def persist_activation(
@@ -147,29 +113,23 @@ async def activate(code: str, *, base_url: str) -> dict[str, Any]:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m clawchat_gateway.activate")
-    parser.add_argument("code", help="ClawChat activation code")
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument(
-        "--no-restart",
-        action="store_true",
-        help="Skip the detached `hermes gateway restart` dispatched after activation.",
-    )
-    args = parser.parse_args(argv)
-    payload = asyncio.run(activate(args.code.strip(), base_url=args.base_url))
-    if not args.no_restart:
-        from clawchat_gateway.restart import schedule_gateway_restart
-
+async def activate_and_maybe_restart(
+    code: str,
+    *,
+    base_url: str,
+    restart: bool,
+    restart_delay_seconds: int = 2,
+) -> dict[str, Any]:
+    payload = await activate(code.strip(), base_url=base_url)
+    payload["ok"] = True
+    if restart:
         payload["restart_scheduled"] = True
-        payload["restart_delay_seconds"] = 2
-        payload["restart_command"] = schedule_gateway_restart(delay_seconds=2)
-        payload["restart_message"] = (
-            "ClawChat activation saved. Hermes gateway restart dispatched in the background."
+        payload["restart_delay_seconds"] = restart_delay_seconds
+        payload["restart_command"] = schedule_gateway_restart(
+            delay_seconds=restart_delay_seconds
         )
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0
+        payload["restart_message"] = (
+            "ClawChat activation is saved. Hermes restart has been scheduled in the background."
+        )
+    return payload
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())

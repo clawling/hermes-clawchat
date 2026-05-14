@@ -17,7 +17,7 @@ ClawChat connects OpenClaw to the ClawChat Protocol v2 over WebSocket via
 `@newbase-clawchat/sdk@^0.1.0`, plus a small REST surface mounted under
 `/v1/*` for profile / social / media operations. It supports text + media
 chat in both direct and group rooms, progressive streaming replies with a
-consolidated final `message.reply`, reply context pass-through, and an
+stream finalization via `message.done`, reply context pass-through, and an
 invite-code based onboarding flow.
 
 ## Features
@@ -25,8 +25,8 @@ invite-code based onboarding flow.
 - WebSocket transport via `@newbase-clawchat/sdk` (auto reconnect with exponential backoff, heartbeat, ack tracking)
 - Invite-code onboarding (`openclaw channels setup --channel openclaw-clawchat --code INV-XXXX`)
 - Inbound `message.send` and `message.reply` with reply context
-- Direct + group chat. Group trigger policy is configurable (`groupMode: "mention" | "all"`)
-- Outbound text replies: static or progressive streaming with a final consolidated `message.reply`
+- Direct + group chat. Group trigger policy is configurable (`groupMode: "all" | "mention"`)
+- Outbound text replies: static `message.reply` or progressive streaming finalized by `message.done`
 - Typing lifecycle events for both reply modes
 - Media fragments (image / file / audio / video) in either direction
 - Filtered forwarding for thinking / tool-call content
@@ -122,7 +122,7 @@ Error: Clawling Chat setup requires --code (invite code from your admin).
 openclaw channels login --channel openclaw-clawchat
 
 # Programmatic login from an agent turn:
-# the LLM invokes the `clawchat_activate` tool with `{ code: "INV-ABC123" }`
+# Hermes-side activation now uses `/clawchat-activate INV-ABC123`
 # — trigger phrases include "clawchat INV-ABC123", "activate clawchat",
 # "use invite code XYZ".
 ```
@@ -154,7 +154,7 @@ Edit `~/.openclaw/openclaw.json` (or let `setup` + `login` write it for you):
       // websocketUrl / baseUrl default to DEFAULT_WEBSOCKET_URL /
       // DEFAULT_BASE_URL in config.ts — override only when self-hosting.
       replyMode: "stream",
-      groupMode: "mention",     // "mention" | "all"
+      groupMode: "all",         // "all" | "mention"
       forwardThinking: true,
       forwardToolCalls: false,
       // token / userId / refreshToken are written by the login flow.
@@ -174,7 +174,7 @@ Edit `~/.openclaw/openclaw.json` (or let `setup` + `login` write it for you):
 | `refreshToken`            | string                  | — (written by login)    | Refresh token paired with `token`                                                   |
 | `userId`                  | string                  | — (written by login)    | Stable agent id; used on mention detection and sender identity                      |
 | `replyMode`               | `"static" \| "stream"`  | `"static"`              | Reply style                                                                         |
-| `groupMode`               | `"mention" \| "all"`    | `"mention"`             | Group trigger policy (see below)                                                    |
+| `groupMode`               | `"all" \| "mention"`    | `"all"`                 | Group trigger policy (see below)                                                    |
 | `forwardThinking`         | boolean                 | `true`                  | Forward reasoning / thinking content to chat                                        |
 | `forwardToolCalls`        | boolean                 | `false`                 | Forward tool call content to chat                                                   |
 | `stream.flushIntervalMs`  | integer                 | `250`                   | Streaming throttle window                                                           |
@@ -193,9 +193,9 @@ Edit `~/.openclaw/openclaw.json` (or let `setup` + `login` write it for you):
 
 Controls how group-chat messages are handled:
 
-- **`"mention"` (default)**: only messages whose `context.mentions` list contains our
+- **`"all"` (default)**: every group message triggers a reply — open-listen mode.
+- **`"mention"`**: only messages whose `context.mentions` list contains our
   `userId` trigger a reply. Quiet groups stay quiet.
-- **`"all"`**: every group message triggers a reply — open-listen mode.
 
 Direct chats are always triggered regardless of this setting.
 
@@ -221,13 +221,12 @@ a bare chat_id and default to direct.
 
 ## Tools
 
-All tool names start with `clawchat_`. The activation tool is registered
+All Hermes tool names start with `clawchat_`. Activation is handled by commands
 **unconditionally**; the rest register only when the account is configured
 (i.e. after a successful login).
 
 | Tool                         | When registered | Purpose                                              |
 | ---------------------------- | --------------- | ---------------------------------------------------- |
-| `clawchat_activate`          | always          | Exchange invite code for a token (onboarding)        |
 | `clawchat_get_my_profile`    | after login     | Fetch the agent's own profile                        |
 | `clawchat_get_user_info`     | after login     | Fetch a user profile by `userId`                     |
 | `clawchat_list_friends`      | after login     | Paginated friend list (`page`, `pageSize`)           |
@@ -236,7 +235,7 @@ All tool names start with `clawchat_`. The activation tool is registered
 
 Tool trigger hints (visible to the LLM via each tool's `description`):
 
-- `clawchat_activate`: fires on `clawchat <code>` / `activate clawchat` / `login to clawchat` / any invite-code looking paste.
+- `/clawchat-activate`: use for activation/invite-code onboarding.
 - `clawchat_update_my_profile`: fires on name-change phrases (`your name is X`, `change your name to X`, `你叫 X`, `改名为 X`, etc.) and avatar-change phrases (`change your avatar`, `生成头像`, `换个头像`) — the agent is expected to chain `clawchat_upload_file` → `clawchat_update_my_profile` for avatar URLs.
 
 ## Agent prompt hints
@@ -248,7 +247,7 @@ appended to the agent's system prompt when a clawchat turn arrives:
   specific chat explicitly, use `cc:{chat_id}` (direct, default) or
   `cc:group:{chat_id}` (group). `clawchat:` is accepted as a synonym.
 - ClawChat supports media fragments (image / file / audio / video) alongside text in the same message.
-- ClawChat stream mode emits `message.created` → progressive `message.add` deltas → `message.done`, followed by a consolidated `message.reply` with the merged text.
+- ClawChat stream mode emits `message.created` → progressive `message.add` deltas → `message.done`. It does not also emit a consolidated `message.reply` for the same live stream.
 
 ## Media
 
@@ -288,8 +287,8 @@ choice.
 - inbound `message.reply` → chat turn with reply context
 - outbound static reply → SDK `sendMessage` / `replyMessage` (ack-tracked)
 - outbound stream reply → `message.created` / `message.add` (many) /
-  `message.done` / then a consolidated `message.reply` — all four frames
-  share the **agent-side** `payload.message_id` minted at `created` time
+  `message.done` — all stream frames share the **agent-side**
+  `payload.message_id` minted at `created` time
   (never reuses the inbound user id)
 - typing indicator → `typing.update`
 
@@ -466,16 +465,14 @@ sequenceDiagram
 
   %% --- gateway boot ---
   rect rgb(242,249,244)
-    note over GW,SRV: Gateway boot + handshake
+    note over GW,SRV: Gateway boot + bearer-subprotocol auth
     OP->>CLI: openclaw gateway run
     CLI->>PLG: gateway.startAccount
     PLG->>GW: startOpenclawClawlingGateway
     GW->>SDK: createWSClient({ url, token, reconnect, heartbeat, ack })
     GW->>SDK: client.connect()
-    SDK->>WS: open WS
-    WS-->>SDK: connect.challenge { nonce }
-    SDK-->>WS: connect { nonce, token, signature = HMAC(token, nonce) }
-    WS-->>SDK: hello-ok
+    SDK->>WS: open WS<br/>Authorization: Bearer token<br/>X-Device-Id: openclaw-clawchat<br/>Sec-WebSocket-Protocol: clawchat.v1, bearer.token
+    WS-->>SDK: accepted
     SDK-->>GW: resolved
     GW-->>PLG: status { connected: true, running: true }
   end
@@ -514,10 +511,8 @@ sequenceDiagram
     AGT-->>GW: onIdle (agent run complete)
     GW->>SDK: emitStreamDone<br/>fragments:[{ kind:"text", text:&lt;merged&gt; }]
     SDK->>WS: frame
-    GW->>SDK: emitFinalStreamReply (low-level transport send)<br/>message.reply<br/>payload.message_id = "agent-stream-…"<br/>reply_to_msg_id = user-msg-01K…
-    SDK->>WS: frame
     WS->>SRV: forward
-    SRV-->>USER: final reply
+    SRV-->>USER: stream finalized
   end
 
   %% --- static outbound ---
@@ -539,8 +534,7 @@ sequenceDiagram
     note over SDK,WS: Transport failure → SDK reconnect (no work for us)
     WS--xSDK: close / error
     SDK->>SDK: scheduleReconnect<br/>computeBackoff(attempt) = initialDelay * 2^attempt,<br/>capped at maxDelay, jitterRatio applied
-    SDK->>WS: retry openSocket (delay elapses)
-    WS-->>SDK: connect.challenge (restart handshake)
+    SDK->>WS: retry openSocket with bearer subprotocol (delay elapses)
   end
 ```
 
@@ -605,10 +599,10 @@ sequenceDiagram
 
 ### Reply shape is wrong for your client
 - Use `replyMode: "static"` for clients expecting one final message.
-- Use `replyMode: "stream"` for clients that render incremental assistant output — they'll see `message.created` → many `message.add` → `message.done`, followed by a consolidated `message.reply` (same `message_id`).
+- Use `replyMode: "stream"` for clients that render incremental assistant output — they'll see `message.created` → many `message.add` → `message.done`.
 
-### Group bot stays silent
-- Default `groupMode: "mention"` requires an `@<self>` mention on every turn. Switch to `"all"` for open-listen, or make sure the client's `context.mentions` actually includes your `userId`.
+### Group bot is too chatty
+- Default `groupMode: "all"` replies to every group message. Switch to `"mention"` for quieter groups, and make sure the client's `context.mentions` includes your `userId` when the bot should reply.
 
 ### Noisy chat
 - Set `forwardThinking: false` to suppress reasoning blocks.

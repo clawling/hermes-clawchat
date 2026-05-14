@@ -7,11 +7,15 @@ resolves to these stubs when tests run.
 from __future__ import annotations
 
 import enum
+import os
 import sys
 import types
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, List, Optional
+
+import yaml
 
 
 class _Platform(enum.Enum):
@@ -106,3 +110,59 @@ def install() -> None:
     sys.modules.setdefault("gateway.platforms", platforms)
     sys.modules["gateway.platforms.base"] = base
     sys.modules["gateway.config"] = gateway_config
+
+    hermes_cli = types.ModuleType("hermes_cli")
+    hermes_config = types.ModuleType("hermes_cli.config")
+
+    def hermes_home() -> Path:
+        return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+
+    def get_config_path() -> Path:
+        return hermes_home() / "config.yaml"
+
+    def get_env_path() -> Path:
+        return hermes_home() / ".env"
+
+    def read_raw_config() -> dict[str, Any]:
+        path = get_config_path()
+        if not path.exists():
+            return {}
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    def save_config(config: dict[str, Any]) -> None:
+        path = get_config_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            yaml.safe_dump(config, allow_unicode=False, sort_keys=False),
+            encoding="utf-8",
+        )
+
+    def save_env_value(key: str, value: str) -> None:
+        path = get_env_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        prefix = f"{key}="
+        next_lines = [line for line in lines if not line.startswith(prefix)]
+        next_lines.append(f"{key}={value}")
+        path.write_text("\n".join(next_lines) + "\n", encoding="utf-8")
+
+    def remove_env_value(key: str) -> None:
+        path = get_env_path()
+        if not path.exists():
+            return
+        prefix = f"{key}="
+        next_lines = [
+            line for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.startswith(prefix)
+        ]
+        path.write_text("\n".join(next_lines) + ("\n" if next_lines else ""), encoding="utf-8")
+
+    hermes_config.get_config_path = get_config_path
+    hermes_config.get_env_path = get_env_path
+    hermes_config.read_raw_config = read_raw_config
+    hermes_config.save_config = save_config
+    hermes_config.save_env_value = save_env_value
+    hermes_config.remove_env_value = remove_env_value
+    hermes_cli.config = hermes_config
+    sys.modules.setdefault("hermes_cli", hermes_cli)
+    sys.modules.setdefault("hermes_cli.config", hermes_config)
