@@ -38,9 +38,11 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 ### `tests/test_activate.py`
 
-- `test_persist_activation_writes_secrets_to_env_and_config_without_secrets` — monkeypatches `$HERMES_HOME`; calls `activate.persist_activation` and checks that `.env` has the ClawChat tokens while `config.yaml` has enabled ClawChat, non-secret `extra` keys, and streaming/display defaults.
-- `test_persist_activation_removes_stale_config_secrets_and_refresh_env` — ensures a reactivation removes old YAML token fields, updates `CLAWCHAT_TOKEN`, removes stale `CLAWCHAT_REFRESH_TOKEN` when no refresh token is returned, and preserves unrelated `.env` entries.
-- `test_persist_activation_uses_hermes_config_helpers_when_available` — injects a fake `hermes_cli.config` module and verifies activation persistence delegates to Hermes' `save_env_value`, `remove_env_value`, and `save_config` helpers when they are importable.
+- `test_activation_module_requires_hermes_config_helpers` — verifies activation fails at module import when `hermes_cli.config` is unavailable instead of writing config files directly.
+- `test_activation_module_binds_official_config_helpers_at_import` — verifies `clawchat_gateway.activate` binds `hermes_cli.config` helpers directly at import time and no longer keeps a runtime helper-detection wrapper.
+- `test_persist_activation_writes_secrets_to_env_and_config_without_secrets` — injects fake `hermes_cli.config` helpers; calls `activate.persist_activation`; verifies tokens are saved through `save_env_value` while non-secret ClawChat config, streaming defaults, and display defaults are saved through `save_config`.
+- `test_persist_activation_removes_stale_config_secrets_and_refresh_env` — ensures a reactivation removes old YAML token fields, updates `CLAWCHAT_TOKEN`, and removes stale `CLAWCHAT_REFRESH_TOKEN` when no refresh token is returned.
+- `test_persist_activation_uses_hermes_config_helpers_when_available` — injects a fake `hermes_cli.config` module and verifies activation persistence delegates to Hermes' `save_env_value`, `remove_env_value`, and `save_config` helpers.
 - `activate_and_maybe_restart` coverage verifies the shared activation wrapper appends `ok`, schedules restart metadata and command when requested, and leaves restart scheduling untouched when `restart=False`.
 
 ### `tests/test_setup.py`

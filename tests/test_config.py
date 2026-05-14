@@ -1,7 +1,26 @@
 import sys
 import types
 
+import pytest
+
 from clawchat_gateway.config import ClawChatConfig
+
+
+@pytest.fixture(autouse=True)
+def _isolated_clawchat_env(monkeypatch, tmp_path):
+    for name in (
+        "CLAWCHAT_WEBSOCKET_URL",
+        "CLAWCHAT_WS_URL",
+        "CLAWCHAT_BASE_URL",
+        "CLAWCHAT_TOKEN",
+        "CLAWCHAT_REFRESH_TOKEN",
+        "CLAWCHAT_USER_ID",
+        "CLAWCHAT_REPLY_MODE",
+        "CLAWCHAT_GROUP_MODE",
+        "CLAWCHAT_MEDIA_LOCAL_ROOTS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
 
 
 def test_config_defaults():

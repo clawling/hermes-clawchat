@@ -4,124 +4,44 @@ import argparse
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-import yaml
+try:
+    from hermes_cli.config import (
+        get_config_path,
+        get_env_path,
+        read_raw_config,
+        remove_env_value,
+        save_config,
+        save_env_value,
+    )
+except Exception as exc:
+    raise RuntimeError(
+        "ClawChat activation requires hermes_cli.config helpers; "
+        "run activation through Hermes so config writes use the official API."
+    ) from exc
 
 from clawchat_gateway.api_client import DEFAULT_BASE_URL, DEFAULT_WEBSOCKET_URL, ClawChatApiClient
 from clawchat_gateway.restart import schedule_gateway_restart
 
 
-def _hermes_config_api() -> dict[str, Callable[..., Any]] | None:
-    try:
-        from hermes_cli.config import (
-            get_config_path,
-            get_env_path,
-            read_raw_config,
-            remove_env_value,
-            save_config,
-            save_env_value,
-        )
-    except Exception:
-        return None
-    return {
-        "get_config_path": get_config_path,
-        "get_env_path": get_env_path,
-        "read_raw_config": read_raw_config,
-        "remove_env_value": remove_env_value,
-        "save_config": save_config,
-        "save_env_value": save_env_value,
-    }
-
-
-def _hermes_home() -> Path:
-    import os
-
-    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
-
-
 def _load_config() -> tuple[Path, dict[str, Any]]:
-    api = _hermes_config_api()
-    if api is not None:
-        config_path = Path(api["get_config_path"]())
-        try:
-            config = api["read_raw_config"]() or {}
-        except Exception:
-            config = {}
-        return config_path, config
-
-    config_path = _hermes_home() / "config.yaml"
-    if not config_path.exists():
-        return config_path, {}
-    try:
-        return config_path, yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return config_path, {}
+    config_path = Path(get_config_path())
+    return config_path, read_raw_config() or {}
 
 
-def _write_config(config_path: Path, config: dict[str, Any]) -> None:
-    api = _hermes_config_api()
-    if api is not None:
-        api["save_config"](config)
-        return
-
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        yaml.safe_dump(config, allow_unicode=False, sort_keys=False),
-        encoding="utf-8",
-    )
-
-
-def _env_path() -> Path:
-    api = _hermes_config_api()
-    if api is not None:
-        return Path(api["get_env_path"]())
-    return _hermes_home() / ".env"
-
-
-def _validate_env_value(key: str, value: str) -> str:
-    if "\n" in value or "\r" in value:
-        raise ValueError(f"{key} cannot contain newlines")
-    return value
+def _write_config(_config_path: Path, config: dict[str, Any]) -> None:
+    save_config(config)
 
 
 def _write_env_values(values: dict[str, str | None]) -> Path:
-    api = _hermes_config_api()
-    if api is not None:
-        for key, value in values.items():
-            if value is None:
-                api["remove_env_value"](key)
-            else:
-                api["save_env_value"](key, str(value))
-        return Path(api["get_env_path"]())
-
-    path = _env_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    pending = {
-        key: None if value is None else _validate_env_value(key, str(value))
-        for key, value in values.items()
-    }
-    emitted: set[str] = set()
-    next_lines: list[str] = []
-
-    for line in lines:
-        key = line.split("=", 1)[0] if "=" in line else ""
-        if key not in pending:
-            next_lines.append(line)
-            continue
-        value = pending[key]
-        if value is not None and key not in emitted:
-            next_lines.append(f"{key}={value}")
-            emitted.add(key)
-
-    for key, value in pending.items():
-        if value is not None and key not in emitted:
-            next_lines.append(f"{key}={value}")
-
-    path.write_text("\n".join(next_lines) + ("\n" if next_lines else ""), encoding="utf-8")
-    return path
+    for key, value in values.items():
+        if value is None:
+            remove_env_value(key)
+        else:
+            save_env_value(key, str(value))
+    return Path(get_env_path())
 
 
 def _derive_websocket_url(base_url: str) -> str:

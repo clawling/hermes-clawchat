@@ -1,20 +1,16 @@
 # Activate — `clawchat_gateway/activate.py`
 
-Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`. When running inside Hermes, persistence goes through `hermes_cli.config` helpers (`read_raw_config`, `save_config`, `save_env_value`, `remove_env_value`) so Hermes owns atomic writes, permissions, managed-mode handling, and env-cache invalidation. The module keeps direct file I/O only as a fallback for tests or standalone installs where `hermes_cli` is not importable.
+Exchanges a ClawChat activation (invite) code for a token via `/v1/agents/connect`, persists secrets into `$HERMES_HOME/.env`, and writes non-secret platform settings + streaming defaults into `$HERMES_HOME/config.yaml`. The module imports `hermes_cli.config` helpers (`get_config_path`, `get_env_path`, `read_raw_config`, `save_config`, `save_env_value`, `remove_env_value`) at import time, so persistence must go through the official Hermes config API. If those helpers are unavailable, activation fails instead of writing config files directly.
 
-Exposed as a Python API, a shared activation-and-restart helper, a native Hermes CLI command (`hermes clawchat activate CODE`), the interactive Hermes gateway setup flow (`hermes gateway setup`), the `clawchat_activate` tool handler, and a standalone module CLI (`python -m clawchat_gateway.activate CODE`).
+Exposed as a Python API, a shared activation-and-restart helper, a native Hermes CLI command (`hermes clawchat activate CODE`), the interactive Hermes gateway setup flow (`hermes gateway setup`), and the `clawchat_activate` tool handler.
 
 ## Helpers
 
 | Function | Signature | Purpose |
 |---|---|---|
-| `_hermes_config_api` | `() -> dict[str, Callable] \| None` | Detect `hermes_cli.config` write helpers. Returns `None` outside Hermes. |
-| `_hermes_home` | `() -> Path` | `$HERMES_HOME` or `~/.hermes`. |
-| `_load_config` | `() -> tuple[Path, dict]` | Prefer `hermes_cli.config.get_config_path()` + `read_raw_config()`; fallback loads `$HERMES_HOME/config.yaml`; returns `(path, {})` if missing or malformed. Does not raise. |
-| `_write_config` | `(config_path: Path, config: dict) -> None` | Prefer `hermes_cli.config.save_config(config)`; fallback serialises via `yaml.safe_dump(..., allow_unicode=False, sort_keys=False)` and creates parent dirs. |
-| `_env_path` | `() -> Path` | Prefer `hermes_cli.config.get_env_path()`; fallback returns `$HERMES_HOME/.env`. |
-| `_validate_env_value` | `(key: str, value: str) -> str` | Reject `\n` / `\r` in `.env` values to keep the line-based format intact. Raises `ValueError` when invalid; returns `value` otherwise. |
-| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Prefer `hermes_cli.config.save_env_value` / `remove_env_value`; fallback upserts selected `KEY=value` lines in `.env`, preserves unrelated lines, and removes keys whose value is `None`. Each fallback non-`None` value goes through `_validate_env_value`. |
+| `_load_config` | `() -> tuple[Path, dict]` | Use `hermes_cli.config.get_config_path()` + `read_raw_config()`; returns `(path, {})` when Hermes reports an empty config. |
+| `_write_config` | `(config_path: Path, config: dict) -> None` | Use `hermes_cli.config.save_config(config)`. |
+| `_write_env_values` | `(values: dict[str, str \| None]) -> Path` | Use `hermes_cli.config.save_env_value` / `remove_env_value`, then return `get_env_path()`. |
 | `_derive_websocket_url` | `(base_url: str) -> str` | For the two well-known NewBase hosts (`company.newbaselab.com:19001` and `:10086`), return `DEFAULT_WEBSOCKET_URL` verbatim. Otherwise swap `http→ws`/`https→wss` and append `/ws`. |
 
 ## `persist_activation`
@@ -27,7 +23,7 @@ Writes into `~/.hermes/.env`:
 
 - `CLAWCHAT_TOKEN = access_token`
 - `CLAWCHAT_REFRESH_TOKEN = refresh_token` when present, or removes any stale `CLAWCHAT_REFRESH_TOKEN` when absent.
-- Uses `hermes_cli.config.save_env_value` / `remove_env_value` when available.
+- Uses `hermes_cli.config.save_env_value` / `remove_env_value`.
 
 Writes into `~/.hermes/config.yaml`:
 
@@ -46,7 +42,7 @@ Writes into `~/.hermes/config.yaml`:
 - `display.platforms.clawchat`:
   - `tool_progress = "off"`
   - `show_reasoning = False`
-- Uses `hermes_cli.config.read_raw_config` / `save_config` when available, so only the user's raw config is mutated rather than dumping Hermes defaults.
+- Uses `hermes_cli.config.read_raw_config` / `save_config`, so only the user's raw config is mutated rather than dumping Hermes defaults.
 
 Returns a dict describing the result (tokens are redacted as `"***"`):
 
@@ -104,26 +100,6 @@ When `restart=False`, the persisted activation result still contains `restart_re
 | `clawchat_activate` tool (`handle_clawchat_activate` in `clawchat_gateway/plugin_tools.py`) | Always calls `activate_and_maybe_restart(..., restart=True)`. | Returns a Hermes v0.12-compatible JSON string. Converts exceptions to `_tool_error`. |
 | `hermes clawchat activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Preferred scriptable Hermes-native flow. Registered by `ctx.register_cli_command`. |
 | `hermes gateway setup` | Calls `activate_and_maybe_restart(..., restart=False)`. | Preferred interactive flow. The setup hook tells the user that Hermes gateway setup will handle the final service step after finishing. |
-| `python -m clawchat_gateway.activate CODE` | Calls `activate_and_maybe_restart(..., restart=not --no-restart)`. | Standalone module CLI for development and direct module execution; install docs use the native Hermes CLI. |
-
-## CLI — `main(argv=None) -> int`
-
-```
-usage: python -m clawchat_gateway.activate [--base-url URL] [--no-restart] CODE
-```
-
-- `code` — positional, required. Passed to `activate_and_maybe_restart(...)`, which strips surrounding whitespace before calling `activate(...)`.
-- `--base-url` — default `DEFAULT_BASE_URL`.
-- `--no-restart` — skip the detached `hermes gateway restart` that would otherwise be dispatched after activation succeeds. Useful when chaining the CLI with another orchestrator that controls restart timing.
-
-Runs `asyncio.run(activate_and_maybe_restart(...))`. On success (and unless `--no-restart` is passed):
-
-1. Imports `clawchat_gateway.restart.schedule_gateway_restart` and calls it with `delay_seconds=2`.
-2. Augments the printed payload with `restart_scheduled: True`, `restart_delay_seconds: 2`, `restart_command: <resolved sh -lc string>`, and `restart_message: "ClawChat activation is saved. Hermes restart has been scheduled in the background."`.
-3. Pretty-prints the payload (`ensure_ascii=False, indent=2`) and exits 0.
-
-API errors bubble up as exceptions (no try/except wrapper in `main`), so the CLI crashes with a traceback on transport / auth failure. The Hermes tool handler `handle_clawchat_activate` catches these and converts them to a `_tool_error` envelope.
-
 ## Native Hermes CLI — `hermes clawchat activate CODE`
 
 Registered by the plugin via `ctx.register_cli_command("clawchat", ...)` when the host supports native plugin CLI commands.

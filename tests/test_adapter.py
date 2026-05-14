@@ -105,7 +105,7 @@ async def test_on_message_attaches_clawchat_skill_for_activation_intent():
 
     event = adapter.handled[0]
     assert event.auto_skill == "clawchat"
-    assert "python -m clawchat_gateway.activate CODE" in event.channel_prompt
+    assert "clawchat_activate" in event.channel_prompt
 
 
 async def test_group_message_attaches_group_covenant_channel_prompt(monkeypatch):
@@ -172,7 +172,7 @@ async def test_group_activation_prompt_appends_covenant(monkeypatch):
     event = adapter.handled[0]
     assert "ClawChat group covenant:" in event.channel_prompt
     assert "群里陈平安是落魄山共和国的国王" in event.channel_prompt
-    assert "python -m clawchat_gateway.activate CODE" in event.channel_prompt
+    assert "clawchat_activate" in event.channel_prompt
 
 
 async def test_on_message_downloads_media_before_dispatch(monkeypatch, tmp_path):

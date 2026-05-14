@@ -85,10 +85,10 @@ _ACTIVATION_INTENT_RE = re.compile(
 _HERMES_STREAM_CURSOR_RE = re.compile(r"[ \t]*▉\Z")
 _CLAWCHAT_SKILL_PROMPT = (
     "The user may be activating or configuring ClawChat. Use the installed "
-    "clawchat skill instructions. If an activation code is present, run "
-    "`python -m clawchat_gateway.activate CODE`; it writes the ClawChat token "
-    "and refresh token and schedules a Hermes gateway restart. If no code is "
-    "present, ask for the ClawChat activation code."
+    "clawchat skill instructions. If an activation code is present, call the "
+    "`clawchat_activate` tool; it writes the ClawChat token and refresh token "
+    "through Hermes config helpers and schedules a Hermes gateway restart. If "
+    "no code is present, ask for the ClawChat activation code."
 )
 
 

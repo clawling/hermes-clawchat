@@ -81,7 +81,7 @@ This exposes `hermes clawchat activate CODE [--base-url URL] [--no-restart]`. Th
 
 ### `register(ctx)` — plugin entrypoint
 
-Module-level setup (runs once when Hermes imports the plugin): the repo root is prepended to `sys.path` so absolute imports of `clawchat_gateway.*` succeed both inside the plugin process and inside the `python -m clawchat_gateway.activate` subprocess.
+Module-level setup (runs once when Hermes imports the plugin): the repo root is prepended to `sys.path` so absolute imports of `clawchat_gateway.*` succeed inside the plugin process.
 
 Order of operations inside `register(ctx)`:
 
