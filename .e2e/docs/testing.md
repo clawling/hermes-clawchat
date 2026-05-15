@@ -142,8 +142,9 @@ For `local_start_test.sh`, what happens, in order:
    tells it to follow `/opt/dev_install.md`. From there the agent
    removes any existing `clawchat` plugin, drives
    `hermes plugins install file:///tmp/hermes-clawchat --enable`, runs
-   `hermes clawchat activate <CODE>`, and lets the native command schedule
-   the gateway reload — all inside the container.
+   `python /opt/data/plugins/clawchat/clawchat_cli.py activate <CODE>`,
+   and lets the compatibility command schedule the gateway reload — all
+   inside the container.
 
 `npm_start_test.sh` follows the same credential, connect-code, and
 fresh-data setup steps, then prompts the in-container agent to install

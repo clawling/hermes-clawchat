@@ -44,6 +44,9 @@ clawchat: Hermes restart scheduled in 2s
 ```
 
 The restart line is omitted when `--no-restart` is used. Unknown or missing subcommands print help and exit `2`.
+If activation raises `ClawChatApiError`, the handler prints a single stderr line with
+the error kind, request path, optional status/code metadata, and message, then exits
+`1` instead of surfacing a Python traceback.
 
 ## v0.12 compatibility entrypoint
 

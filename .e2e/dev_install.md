@@ -32,18 +32,10 @@ hermes plugins install file:///tmp/hermes-clawchat --enable
 
 ## 4. Activate ClawChat — one terminal call, then stop
 
-Use the command that matches the Hermes version from step 1.
-
-Hermes v0.12.0:
+Use the v0.12-compatible plugin entrypoint:
 
 ```bash
-python "${HERMES_HOME:-$HOME/.hermes}/plugins/clawchat/clawchat_cli.py" activate CLAWCHAT_CODE_GOES_HERE
-```
-
-Hermes versions newer than v0.12.0:
-
-```bash
-hermes clawchat activate CLAWCHAT_CODE_GOES_HERE
+python /opt/data/plugins/clawchat/clawchat_cli.py activate CLAWCHAT_CODE_GOES_HERE
 ```
 
 Replace `CLAWCHAT_CODE_GOES_HERE` with the activation code the user provided in their original message. The code is one-time-use. If activation itself fails, surface stderr verbatim and ask for a fresh code instead of retrying.

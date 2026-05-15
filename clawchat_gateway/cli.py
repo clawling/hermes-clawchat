@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 
-from clawchat_gateway.api_client import DEFAULT_BASE_URL
+from clawchat_gateway.api_client import DEFAULT_BASE_URL, ClawChatApiError
 
 activate_and_maybe_restart = None
 
@@ -38,13 +39,25 @@ def handle_clawchat_cli(args: argparse.Namespace) -> int:
     if runner is None:
         from clawchat_gateway.activate import activate_and_maybe_restart as runner
 
-    payload = asyncio.run(
-        runner(
-            args.code,
-            base_url=args.base_url,
-            restart=not args.no_restart,
+    try:
+        payload = asyncio.run(
+            runner(
+                args.code,
+                base_url=args.base_url,
+                restart=not args.no_restart,
+            )
         )
-    )
+    except ClawChatApiError as exc:
+        details = f"{exc.kind}"
+        if exc.path:
+            details = f"{details} {exc.path}"
+        if exc.status is not None:
+            details = f"{details} status={exc.status}"
+        if exc.code is not None:
+            details = f"{details} code={exc.code}"
+        print(f"clawchat: activation failed ({details}): {exc.message}", file=sys.stderr)
+        return 1
+
     print(f"clawchat: activation complete for {payload['user_id']}")
     if payload.get("restart_scheduled"):
         print(

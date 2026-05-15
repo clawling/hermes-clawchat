@@ -54,6 +54,7 @@ When you add a new import from `gateway.*` in production code, extend `fake_herm
 
 - `setup_clawchat_cli` parses `hermes clawchat activate CODE` defaults and `--base-url` / `--no-restart` options.
 - `handle_clawchat_cli` calls `activate_and_maybe_restart(..., restart=True)` by default, prints the activation and restart status lines, and honors `--no-restart` by omitting the restart line.
+- Activation `ClawChatApiError` failures print a concise stderr line and return `1`, instead of leaking a Python traceback.
 
 ### `tests/test_clawchat_command.py`
 
