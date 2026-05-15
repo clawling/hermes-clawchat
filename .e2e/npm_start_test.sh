@@ -21,7 +21,7 @@ case "$JWT" in
     *)         AUTH_HEADER="Bearer $JWT" ;;
 esac
 
-RESPONSE=$(curl -sS --location --request POST 'http://company.newbaselab.com:19001/v1/agents/connect-codes' \
+RESPONSE=$(curl -sS --location --request POST 'https://app.clawling.com/v1/agents/connect-codes' \
     --header 'x-device-id: apifox' \
     --header "Authorization: $AUTH_HEADER")
 
