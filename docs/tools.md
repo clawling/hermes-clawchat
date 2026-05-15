@@ -1,6 +1,6 @@
 # Tools — `clawchat_gateway/tools.py`
 
-Single source of truth for the six account/profile/media REST handlers. Both the Hermes-facing wrappers in `clawchat_gateway/plugin_tools.py` and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
+Single source of truth for the account/profile/media/search/moment REST handlers. Both the Hermes-facing wrappers in `clawchat_gateway/plugin_tools.py` and the `profile.py` CLI subcommands call into this module. Handlers return result dicts and **never raise** — every failure mode is mapped to an `{"error": "...", "message": "..."}` envelope.
 
 ## Constants
 

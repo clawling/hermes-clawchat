@@ -49,6 +49,62 @@ class _FakeClient:
             raise self._raises
         return self._responses.get("list_friends", {"items": [], "page": page, "pageSize": page_size})
 
+    async def search_users(self, *, q="", limit=None):
+        self.calls.append(("search_users", {"q": q, "limit": limit}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("search_users", {"users": []})
+
+    async def list_moments(self, *, before=None, limit=None):
+        self.calls.append(("list_moments", {"before": before, "limit": limit}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("list_moments", {"moments": []})
+
+    async def create_moment(self, *, text=None, images=None):
+        self.calls.append(("create_moment", {"text": text, "images": images}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("create_moment", {"moment": {"id": 1, "text": text}})
+
+    async def delete_moment(self, moment_id):
+        self.calls.append(("delete_moment", {"moment_id": moment_id}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("delete_moment", {"ok": True})
+
+    async def toggle_moment_reaction(self, *, moment_id, emoji):
+        self.calls.append(("toggle_moment_reaction", {"moment_id": moment_id, "emoji": emoji}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get(
+            "toggle_moment_reaction",
+            {"reactions": [{"emoji": emoji, "count": 1, "mine": True}]},
+        )
+
+    async def create_moment_comment(self, *, moment_id, text):
+        self.calls.append(("create_moment_comment", {"moment_id": moment_id, "text": text}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("create_moment_comment", {"comment": {"id": 1, "text": text}})
+
+    async def reply_moment_comment(self, *, moment_id, reply_to_comment_id, text):
+        self.calls.append(
+            (
+                "reply_moment_comment",
+                {"moment_id": moment_id, "reply_to_comment_id": reply_to_comment_id, "text": text},
+            )
+        )
+        if self._raises:
+            raise self._raises
+        return self._responses.get("reply_moment_comment", {"comment": {"id": 2, "text": text}})
+
+    async def delete_moment_comment(self, *, moment_id, comment_id):
+        self.calls.append(("delete_moment_comment", {"moment_id": moment_id, "comment_id": comment_id}))
+        if self._raises:
+            raise self._raises
+        return self._responses.get("delete_moment_comment", {"ok": True})
+
     async def update_my_profile(self, **patch):
         self.calls.append(("update_my_profile", patch))
         if self._raises:
@@ -105,6 +161,67 @@ async def test_list_account_friends_default_pagination(stub_client):
 async def test_list_account_friends_custom_pagination(stub_client):
     await tools.list_account_friends(page=3, page_size=50)
     assert stub_client["client"].calls == [("list_friends", {"page": 3, "page_size": 50})]
+
+
+async def test_search_users_happy(stub_client):
+    result = await tools.search_users(q="Alice", limit=20)
+    assert result == {"users": []}
+    assert stub_client["client"].calls == [("search_users", {"q": "Alice", "limit": 20})]
+
+
+async def test_list_moments_happy(stub_client):
+    result = await tools.list_moments(before=123, limit=30)
+    assert result == {"moments": []}
+    assert stub_client["client"].calls == [("list_moments", {"before": 123, "limit": 30})]
+
+
+async def test_create_moment_text_and_images(stub_client):
+    result = await tools.create_moment(text="hello", images=["https://cdn/a.png"])
+    assert result["moment"]["text"] == "hello"
+    assert stub_client["client"].calls == [
+        ("create_moment", {"text": "hello", "images": ["https://cdn/a.png"]}),
+    ]
+
+
+async def test_delete_moment_happy(stub_client):
+    result = await tools.delete_moment(123)
+    assert result == {"ok": True}
+    assert stub_client["client"].calls == [("delete_moment", {"moment_id": 123})]
+
+
+async def test_toggle_moment_reaction_happy(stub_client):
+    result = await tools.toggle_moment_reaction(123, "👍")
+    assert result["reactions"][0]["mine"] is True
+    assert stub_client["client"].calls == [
+        ("toggle_moment_reaction", {"moment_id": 123, "emoji": "👍"}),
+    ]
+
+
+async def test_create_moment_comment_happy(stub_client):
+    result = await tools.create_moment_comment(123, "nice")
+    assert result["comment"]["text"] == "nice"
+    assert stub_client["client"].calls == [
+        ("create_moment_comment", {"moment_id": 123, "text": "nice"}),
+    ]
+
+
+async def test_reply_moment_comment_happy(stub_client):
+    result = await tools.reply_moment_comment(123, 456, "yes")
+    assert result["comment"]["text"] == "yes"
+    assert stub_client["client"].calls == [
+        (
+            "reply_moment_comment",
+            {"moment_id": 123, "reply_to_comment_id": 456, "text": "yes"},
+        ),
+    ]
+
+
+async def test_delete_moment_comment_happy(stub_client):
+    result = await tools.delete_moment_comment(123, 456)
+    assert result == {"ok": True}
+    assert stub_client["client"].calls == [
+        ("delete_moment_comment", {"moment_id": 123, "comment_id": 456}),
+    ]
 
 
 async def test_update_account_profile_partial(stub_client):
@@ -175,6 +292,18 @@ async def test_list_account_friends_invalid_page(stub_client):
 async def test_list_account_friends_invalid_page_size(stub_client):
     assert (await tools.list_account_friends(page_size=200))["error"] == "validation"
     assert (await tools.list_account_friends(page_size=0))["error"] == "validation"
+    assert stub_client["client"].calls == []
+
+
+async def test_moment_validation_errors(stub_client):
+    assert (await tools.search_users(limit=0))["error"] == "validation"
+    assert (await tools.list_moments(before=0))["error"] == "validation"
+    assert (await tools.create_moment())["error"] == "validation"
+    assert (await tools.delete_moment(0))["error"] == "validation"
+    assert (await tools.toggle_moment_reaction(123, ""))["error"] == "validation"
+    assert (await tools.create_moment_comment(123, ""))["error"] == "validation"
+    assert (await tools.reply_moment_comment(123, 0, "yes"))["error"] == "validation"
+    assert (await tools.delete_moment_comment(123, 0))["error"] == "validation"
     assert stub_client["client"].calls == []
 
 

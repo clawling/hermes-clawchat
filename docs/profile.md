@@ -15,7 +15,7 @@
 
 The token normally comes from `CLAWCHAT_TOKEN` in `.env` after activation. Reading `platforms.clawchat.extra.token` remains as a backward-compatible fallback for older installs.
 
-`ProfileConfigError` is raised only by the loader helpers. The CLI handlers catch no exceptions from tools directly because the six tool handlers return error dictionaries instead of raising.
+`ProfileConfigError` is raised only by the loader helpers. The CLI handlers catch no exceptions from tools directly because tool handlers return error dictionaries instead of raising.
 
 ## CLI
 

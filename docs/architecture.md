@@ -11,10 +11,14 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
 1. Hermes loads the repo root as a plugin. Module-level code in `__init__.py` prepends the plugin root to `sys.path` so absolute imports of `clawchat_gateway.*` resolve in this process. Hermes then calls `register(ctx)`.
 2. `_register_platform(ctx)` calls `ctx.register_platform(...)` with the ClawChat adapter factory, `setup_fn`, config validation hooks, allowlist env vars, and platform prompt hint. If the platform registry API is not available, `register(ctx)` raises a clear `RuntimeError`.
 3. `_configure_runtime_defaults()` seeds ClawChat allow-all / streaming defaults in `$HERMES_HOME`.
-4. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers six account/profile/media tools:
+4. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers fourteen account/profile/media/search/moment tools:
    - `clawchat_get_account_profile` — fetch the configured account profile.
    - `clawchat_get_user_profile` — fetch a public profile by explicit `userId`.
    - `clawchat_list_account_friends` — list friends with pagination.
+   - `clawchat_search_users` — search users by username or nickname.
+   - `clawchat_list_moments` / `clawchat_create_moment` / `clawchat_delete_moment` — view and manage moments/dynamics.
+   - `clawchat_toggle_moment_reaction` — add or remove an emoji reaction.
+   - `clawchat_create_moment_comment` / `clawchat_reply_moment_comment` / `clawchat_delete_moment_comment` — manage moment comments and replies.
    - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
    - `clawchat_upload_avatar_image` — upload a local avatar image and return a hosted URL.
    - `clawchat_upload_media_file` — upload a local media/file attachment and return a public URL.

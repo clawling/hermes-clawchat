@@ -65,9 +65,17 @@ def test_git_plugin_registers_tools_without_skill(monkeypatch, tmp_path):
     module.register(ctx)
 
     assert set(ctx.tools) == {
+        "clawchat_create_moment",
+        "clawchat_create_moment_comment",
+        "clawchat_delete_moment",
+        "clawchat_delete_moment_comment",
         "clawchat_get_account_profile",
         "clawchat_get_user_profile",
         "clawchat_list_account_friends",
+        "clawchat_list_moments",
+        "clawchat_reply_moment_comment",
+        "clawchat_search_users",
+        "clawchat_toggle_moment_reaction",
         "clawchat_update_account_profile",
         "clawchat_upload_avatar_image",
         "clawchat_upload_media_file",

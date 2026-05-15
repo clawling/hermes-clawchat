@@ -67,6 +67,82 @@ class ClawChatApiClient:
         query = urlencode({"page": page, "pageSize": page_size})
         return await self._call_json("GET", f"/v1/friends?{query}")
 
+    async def search_users(self, *, q: str = "", limit: int | None = None) -> dict:
+        params: dict[str, str | int] = {}
+        if q:
+            params["q"] = q
+        if limit is not None:
+            params["limit"] = limit
+        query = urlencode(params)
+        path = f"/v1/users/search?{query}" if query else "/v1/users/search"
+        return await self._call_json("GET", path)
+
+    async def list_moments(self, *, before: int | None = None, limit: int | None = None) -> dict:
+        params: dict[str, int] = {}
+        if before is not None:
+            params["before"] = before
+        if limit is not None:
+            params["limit"] = limit
+        query = urlencode(params)
+        path = f"/v1/moments?{query}" if query else "/v1/moments"
+        return await self._call_json("GET", path)
+
+    async def create_moment(
+        self,
+        *,
+        text: str | None = None,
+        images: list[str] | None = None,
+    ) -> dict:
+        payload = {}
+        if text is not None:
+            payload["text"] = text
+        if images is not None:
+            payload["images"] = images
+        return await self._call_json(
+            "POST",
+            "/v1/moments",
+            body=json.dumps(payload).encode("utf-8"),
+            extra_headers={"content-type": "application/json"},
+        )
+
+    async def delete_moment(self, moment_id: int) -> dict:
+        return await self._call_json("DELETE", f"/v1/moments/{moment_id}")
+
+    async def toggle_moment_reaction(self, *, moment_id: int, emoji: str) -> dict:
+        return await self._call_json(
+            "POST",
+            f"/v1/moments/{moment_id}/reactions",
+            body=json.dumps({"emoji": emoji}).encode("utf-8"),
+            extra_headers={"content-type": "application/json"},
+        )
+
+    async def create_moment_comment(self, *, moment_id: int, text: str) -> dict:
+        return await self._call_json(
+            "POST",
+            f"/v1/moments/{moment_id}/comments",
+            body=json.dumps({"text": text}).encode("utf-8"),
+            extra_headers={"content-type": "application/json"},
+        )
+
+    async def reply_moment_comment(
+        self,
+        *,
+        moment_id: int,
+        reply_to_comment_id: int,
+        text: str,
+    ) -> dict:
+        return await self._call_json(
+            "POST",
+            f"/v1/moments/{moment_id}/comments",
+            body=json.dumps(
+                {"text": text, "reply_to_comment_id": reply_to_comment_id}
+            ).encode("utf-8"),
+            extra_headers={"content-type": "application/json"},
+        )
+
+    async def delete_moment_comment(self, *, moment_id: int, comment_id: int) -> dict:
+        return await self._call_json("DELETE", f"/v1/moments/{moment_id}/comments/{comment_id}")
+
     async def update_my_profile(
         self,
         *,

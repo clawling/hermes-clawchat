@@ -105,7 +105,7 @@ Order of operations inside `register(ctx)`:
 
 1. `_register_platform(ctx)` registers `clawchat` through Hermes' platform registry, including `setup_fn=_setup_clawchat_platform`. If the host does not expose `ctx.register_platform`, registration fails with a clear `RuntimeError`.
 2. `_configure_runtime_defaults()` seeds ClawChat defaults in `$HERMES_HOME`.
-3. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers the six account/profile/media `clawchat_*` tools.
+3. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers the fourteen account/profile/media/search/moment `clawchat_*` tools.
 4. `_register_cli_commands(ctx)` registers the native `hermes clawchat` CLI command when supported.
 5. `_register_commands(ctx)` registers `/clawchat-activate` when supported.
 6. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.

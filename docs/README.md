@@ -45,7 +45,7 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 | File | Purpose | Doc |
 |---|---|---|
 | `clawchat_gateway/plugin_tools.py` | Hermes tool schemas, registration, and JSON-string tool handlers | [plugin-tools.md](./plugin-tools.md) |
-| `clawchat_gateway/tools.py` | Async handlers for the six account/profile/media tools | [tools.md](./tools.md) |
+| `clawchat_gateway/tools.py` | Async handlers for account/profile/media/search/moment tools | [tools.md](./tools.md) |
 | `clawchat_gateway/profile.py` | Profile CLI (`get`, `get-user`, `friends`, `update`, `upload-avatar`, `upload-media`) | [profile.md](./profile.md) |
 | `tests/` | Pytest suite and hermes-agent stubs | [tests.md](./tests.md) |
 

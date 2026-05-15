@@ -55,6 +55,108 @@ async def handle_clawchat_list_account_friends(args, **kw):
     return _tool_result(result)
 
 
+async def handle_clawchat_search_users(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_search_users start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.search_users(
+        q=args.get("q") if isinstance(args.get("q"), str) else "",
+        limit=_optional_int_arg(args.get("limit")),
+    )
+    logger.info("clawchat_search_users done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_list_moments(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_list_moments start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.list_moments(
+        before=_optional_int_arg(args.get("before")),
+        limit=_optional_int_arg(args.get("limit")),
+    )
+    logger.info("clawchat_list_moments done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_create_moment(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_create_moment start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.create_moment(
+        text=args.get("text") if isinstance(args.get("text"), str) else None,
+        images=args.get("images") if isinstance(args.get("images"), list) else None,
+    )
+    logger.info("clawchat_create_moment done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_delete_moment(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_delete_moment start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.delete_moment(_optional_int_arg(args.get("momentId")))
+    logger.info("clawchat_delete_moment done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_toggle_moment_reaction(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_toggle_moment_reaction start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.toggle_moment_reaction(
+        _optional_int_arg(args.get("momentId")),
+        str(args.get("emoji") or ""),
+    )
+    logger.info("clawchat_toggle_moment_reaction done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_create_moment_comment(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_create_moment_comment start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.create_moment_comment(
+        _optional_int_arg(args.get("momentId")),
+        str(args.get("text") or ""),
+    )
+    logger.info("clawchat_create_moment_comment done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_reply_moment_comment(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_reply_moment_comment start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.reply_moment_comment(
+        _optional_int_arg(args.get("momentId")),
+        _optional_int_arg(args.get("replyToCommentId")),
+        str(args.get("text") or ""),
+    )
+    logger.info("clawchat_reply_moment_comment done task_id=%s", task_id)
+    return _tool_result(result)
+
+
+async def handle_clawchat_delete_moment_comment(args, **kw):
+    task_id = kw.get("task_id") or "default"
+    logger.info("clawchat_delete_moment_comment start task_id=%s", task_id)
+    from clawchat_gateway import tools
+
+    result = await tools.delete_moment_comment(
+        _optional_int_arg(args.get("momentId")),
+        _optional_int_arg(args.get("commentId")),
+    )
+    logger.info("clawchat_delete_moment_comment done task_id=%s", task_id)
+    return _tool_result(result)
+
+
 async def handle_clawchat_update_account_profile(args, **kw):
     task_id = kw.get("task_id") or "default"
     logger.info("clawchat_update_account_profile start task_id=%s", task_id)
@@ -172,6 +274,207 @@ def register_tools(ctx) -> None:
         is_async=True,
         description="List ClawChat Account Friends",
         emoji="👥",
+    )
+
+    ctx.register_tool(
+        "clawchat_search_users",
+        "clawchat",
+        {
+            "name": "clawchat_search_users",
+            "description": _direct_tool_description(
+                "Search ClawChat users by username or nickname. "
+                "TRIGGER - invoke when the user asks to search, find, or look up ClawChat users by a typed query, name, username, or nickname, such as \"search ClawChat users named Alice\", \"查找用户 Alice\", or \"搜一下昵称 Alice\". "
+                "Empty q returns no users. Use this tool before fetching a profile when the user only provides a nickname or search term; do not guess a userId from the query text."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "q": {"type": "string", "description": "Search query for ClawChat username or nickname"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Max results (default 20)"},
+                },
+            },
+        },
+        handle_clawchat_search_users,
+        is_async=True,
+        description="Search ClawChat Users",
+        emoji="🔎",
+    )
+
+    ctx.register_tool(
+        "clawchat_list_moments",
+        "clawchat",
+        {
+            "name": "clawchat_list_moments",
+            "description": _direct_tool_description(
+                "List the configured ClawChat account's visible moments feed, including moments from the account and its friends. "
+                "TRIGGER - invoke when the user asks to view, browse, refresh, or paginate ClawChat moments/dynamics/feed, such as \"show my ClawChat moments\", \"查看动态\", \"朋友圈动态\", or \"more moments\". "
+                "Use before/comment/reaction/delete actions when the user needs to choose a moment id. This is a friends-only feed endpoint, not a global public timeline."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "before": {"type": "integer", "minimum": 1, "description": "Cursor; return moments with id < before"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Max items (default 30)"},
+                },
+            },
+        },
+        handle_clawchat_list_moments,
+        is_async=True,
+        description="List ClawChat Moments",
+        emoji="📰",
+    )
+
+    ctx.register_tool(
+        "clawchat_create_moment",
+        "clawchat",
+        {
+            "name": "clawchat_create_moment",
+            "description": _direct_tool_description(
+                "Create a new ClawChat moment/dynamic for the configured ClawChat account. "
+                "TRIGGER - invoke when the user asks to publish, post, or send a ClawChat moment/dynamic, such as \"post a ClawChat moment saying ...\", \"发布动态 ...\", or \"发朋友圈 ...\". "
+                "At least one of text or images must be present. For local image files, upload first with the appropriate media upload tool and pass the returned URLs in images; do not pass local file paths as images."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Moment text. At least one of text or images is required."},
+                    "images": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Image URLs for the moment. Upload local files first; do not pass local paths.",
+                    },
+                },
+            },
+        },
+        handle_clawchat_create_moment,
+        is_async=True,
+        description="Create ClawChat Moment",
+        emoji="📝",
+    )
+
+    ctx.register_tool(
+        "clawchat_delete_moment",
+        "clawchat",
+        {
+            "name": "clawchat_delete_moment",
+            "description": _direct_tool_description(
+                "Delete a ClawChat moment by moment id. "
+                "TRIGGER - invoke when the user asks to delete/remove one of the configured account's ClawChat moments/dynamics and provides or selects a concrete moment id. "
+                "Only the moment author can delete it. Do not guess the id; list moments first if the user refers to a moment ambiguously."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "momentId": {"type": "integer", "minimum": 1, "description": "Concrete ClawChat moment id to delete"},
+                },
+                "required": ["momentId"],
+            },
+        },
+        handle_clawchat_delete_moment,
+        is_async=True,
+        description="Delete ClawChat Moment",
+        emoji="🗑️",
+    )
+
+    ctx.register_tool(
+        "clawchat_toggle_moment_reaction",
+        "clawchat",
+        {
+            "name": "clawchat_toggle_moment_reaction",
+            "description": _direct_tool_description(
+                "Toggle an emoji reaction on a ClawChat moment. "
+                "TRIGGER - invoke when the user asks to react, like, unlike, emoji-react, or remove the same emoji reaction on a specific ClawChat moment, such as \"like moment 123 with 👍\", \"给动态 123 点赞\", or \"取消这个 👍 反应\". "
+                "The API adds the reaction if missing and removes it if already present. Require a concrete moment id and emoji."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "momentId": {"type": "integer", "minimum": 1, "description": "Concrete ClawChat moment id to react to"},
+                    "emoji": {"type": "string", "description": "Emoji reaction to toggle"},
+                },
+                "required": ["momentId", "emoji"],
+            },
+        },
+        handle_clawchat_toggle_moment_reaction,
+        is_async=True,
+        description="Toggle ClawChat Moment Reaction",
+        emoji="👍",
+    )
+
+    ctx.register_tool(
+        "clawchat_create_moment_comment",
+        "clawchat",
+        {
+            "name": "clawchat_create_moment_comment",
+            "description": _direct_tool_description(
+                "Create a top-level comment on a ClawChat moment. "
+                "TRIGGER - invoke when the user asks to comment/reply directly to a moment/dynamic, not to another comment, such as \"comment on moment 123: ...\", \"评论动态 123 ...\", or \"在这条动态下留言 ...\". "
+                "Require a concrete moment id and non-empty text. Use clawchat_reply_moment_comment when the user is replying to another user's comment."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "momentId": {"type": "integer", "minimum": 1, "description": "Concrete ClawChat moment id to comment on"},
+                    "text": {"type": "string", "description": "Top-level comment text"},
+                },
+                "required": ["momentId", "text"],
+            },
+        },
+        handle_clawchat_create_moment_comment,
+        is_async=True,
+        description="Create ClawChat Moment Comment",
+        emoji="💬",
+    )
+
+    ctx.register_tool(
+        "clawchat_reply_moment_comment",
+        "clawchat",
+        {
+            "name": "clawchat_reply_moment_comment",
+            "description": _direct_tool_description(
+                "Reply to an existing ClawChat moment comment with a single-level reply. "
+                "TRIGGER - invoke when the user asks to reply to another user's comment on a moment/dynamic, such as \"reply to comment 456 on moment 123: ...\", \"回复评论 456 ...\", or \"回复他那条评论 ...\". "
+                "Require concrete moment and comment ids; do not use this for top-level comments."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "momentId": {"type": "integer", "minimum": 1, "description": "Concrete ClawChat moment id containing the comment"},
+                    "replyToCommentId": {"type": "integer", "minimum": 1, "description": "Concrete comment id being replied to"},
+                    "text": {"type": "string", "description": "Reply text"},
+                },
+                "required": ["momentId", "replyToCommentId", "text"],
+            },
+        },
+        handle_clawchat_reply_moment_comment,
+        is_async=True,
+        description="Reply To ClawChat Moment Comment",
+        emoji="↩️",
+    )
+
+    ctx.register_tool(
+        "clawchat_delete_moment_comment",
+        "clawchat",
+        {
+            "name": "clawchat_delete_moment_comment",
+            "description": _direct_tool_description(
+                "Delete a comment on a ClawChat moment. "
+                "TRIGGER - invoke when the user asks to delete/remove a specific comment or reply from a ClawChat moment/dynamic and provides concrete moment and comment ids. "
+                "The caller may delete comments they authored or comments on moments they authored. Do not guess ids; list moments first if needed."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "momentId": {"type": "integer", "minimum": 1, "description": "Concrete ClawChat moment id containing the comment"},
+                    "commentId": {"type": "integer", "minimum": 1, "description": "Concrete comment id to delete"},
+                },
+                "required": ["momentId", "commentId"],
+            },
+        },
+        handle_clawchat_delete_moment_comment,
+        is_async=True,
+        description="Delete ClawChat Moment Comment",
+        emoji="🧹",
     )
 
     ctx.register_tool(

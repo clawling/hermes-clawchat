@@ -13,6 +13,14 @@ provides_tools:
   - clawchat_get_account_profile
   - clawchat_get_user_profile
   - clawchat_list_account_friends
+  - clawchat_search_users
+  - clawchat_list_moments
+  - clawchat_create_moment
+  - clawchat_delete_moment
+  - clawchat_toggle_moment_reaction
+  - clawchat_create_moment_comment
+  - clawchat_reply_moment_comment
+  - clawchat_delete_moment_comment
   - clawchat_update_account_profile
   - clawchat_upload_avatar_image
   - clawchat_upload_media_file

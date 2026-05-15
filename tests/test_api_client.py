@@ -20,6 +20,12 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/v1/users/me":
             self._reply({"code": 0, "message": "ok", "data": {"id": "u1"}})
             return
+        if self.path == "/v1/users/search?q=alice&limit=20":
+            self._reply({"code": 0, "message": "ok", "data": {"users": [{"id": "u1"}]}})
+            return
+        if self.path == "/v1/moments?before=123&limit=30":
+            self._reply({"code": 0, "message": "ok", "data": {"moments": [{"id": 122}]}})
+            return
         self.send_response(404)
         self.end_headers()
 
@@ -28,6 +34,24 @@ class _Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         self.server.last_path = self.path
         self.server.paths.append(self.path)
+        if self.path == "/v1/moments":
+            self.server.captured = json.loads(body.decode("utf-8"))
+            self._reply({"code": 0, "message": "ok", "data": {"moment": {"id": 1}}})
+            return
+        if self.path == "/v1/moments/123/reactions":
+            self.server.captured = json.loads(body.decode("utf-8"))
+            self._reply(
+                {
+                    "code": 0,
+                    "message": "ok",
+                    "data": {"reactions": [{"emoji": self.server.captured["emoji"], "count": 1, "mine": True}]},
+                }
+            )
+            return
+        if self.path == "/v1/moments/123/comments":
+            self.server.captured = json.loads(body.decode("utf-8"))
+            self._reply({"code": 0, "message": "ok", "data": {"comment": {"id": 456}}})
+            return
         if self.path == "/v1/agents/connect":
             payload = json.loads(body.decode("utf-8"))
             self.server.captured = payload
@@ -64,6 +88,15 @@ class _Handler(BaseHTTPRequestHandler):
                     "data": {"url": "https://cdn/avatar.png", "size": 12, "mime": "image/png"},
                 }
             )
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_DELETE(self):
+        self.server.last_path = self.path
+        self.server.paths.append(self.path)
+        if self.path in {"/v1/moments/123", "/v1/moments/123/comments/456"}:
+            self._reply({"code": 0, "message": "ok", "data": {"ok": True}})
             return
         self.send_response(404)
         self.end_headers()
@@ -173,6 +206,78 @@ async def test_update_my_profile_patches_current_user(api_server):
         "nickname": "Hermes",
         "avatar_url": "https://cdn/avatar.png",
     }
+
+
+@pytest.mark.asyncio
+async def test_search_users_sends_query(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    result = await client.search_users(q="alice", limit=20)
+
+    assert result == {"users": [{"id": "u1"}]}
+    assert api_server.paths[-1] == "/v1/users/search?q=alice&limit=20"
+
+
+@pytest.mark.asyncio
+async def test_list_moments_sends_query(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    result = await client.list_moments(before=123, limit=30)
+
+    assert result == {"moments": [{"id": 122}]}
+    assert api_server.paths[-1] == "/v1/moments?before=123&limit=30"
+
+
+@pytest.mark.asyncio
+async def test_create_moment_posts_json(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    await client.create_moment(text="hello", images=["https://cdn/a.png"])
+
+    assert api_server.last_path == "/v1/moments"
+    assert api_server.captured == {"text": "hello", "images": ["https://cdn/a.png"]}
+
+
+@pytest.mark.asyncio
+async def test_delete_moment_uses_moment_id(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    result = await client.delete_moment(123)
+
+    assert result == {"ok": True}
+    assert api_server.last_path == "/v1/moments/123"
+
+
+@pytest.mark.asyncio
+async def test_toggle_moment_reaction_posts_emoji(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    result = await client.toggle_moment_reaction(moment_id=123, emoji="👍")
+
+    assert result["reactions"][0]["mine"] is True
+    assert api_server.last_path == "/v1/moments/123/reactions"
+    assert api_server.captured == {"emoji": "👍"}
+
+
+@pytest.mark.asyncio
+async def test_create_and_reply_moment_comment_post_expected_bodies(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    await client.create_moment_comment(moment_id=123, text="nice")
+    assert api_server.captured == {"text": "nice"}
+
+    await client.reply_moment_comment(moment_id=123, reply_to_comment_id=456, text="yes")
+    assert api_server.captured == {"text": "yes", "reply_to_comment_id": 456}
+
+
+@pytest.mark.asyncio
+async def test_delete_moment_comment_uses_moment_and_comment_ids(api_server):
+    client = ClawChatApiClient(base_url=f"http://127.0.0.1:{api_server.server_port}", token="token-bob")
+
+    result = await client.delete_moment_comment(moment_id=123, comment_id=456)
+
+    assert result == {"ok": True}
+    assert api_server.last_path == "/v1/moments/123/comments/456"
 
 
 def test_base_url_requires_http_scheme():

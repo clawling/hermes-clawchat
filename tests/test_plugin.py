@@ -220,9 +220,17 @@ def test_plugin_registers_all_tools(monkeypatch):
     module.register(ctx)
 
     assert set(ctx.tools) == {
+        "clawchat_create_moment",
+        "clawchat_create_moment_comment",
+        "clawchat_delete_moment",
+        "clawchat_delete_moment_comment",
         "clawchat_get_account_profile",
         "clawchat_get_user_profile",
         "clawchat_list_account_friends",
+        "clawchat_list_moments",
+        "clawchat_reply_moment_comment",
+        "clawchat_search_users",
+        "clawchat_toggle_moment_reaction",
         "clawchat_update_account_profile",
         "clawchat_upload_avatar_image",
         "clawchat_upload_media_file",
@@ -286,6 +294,41 @@ def test_upload_media_tool_description_is_link_only_not_current_chat_delivery(mo
     assert "shareable URL" in description
     assert "Do not use this tool to send an attachment in the current chat" in description
     assert "MEDIA:/absolute/local/path" in description
+
+
+def test_search_and_moment_tool_descriptions_match_reviewed_copy(monkeypatch):
+    module = _load_plugin_module()
+    ctx = _PlatformCtx()
+
+    module.register(ctx)
+
+    search = ctx.tools["clawchat_search_users"]["schema"]["description"]
+    list_moments = ctx.tools["clawchat_list_moments"]["schema"]["description"]
+    create_moment = ctx.tools["clawchat_create_moment"]["schema"]["description"]
+    reply = ctx.tools["clawchat_reply_moment_comment"]["schema"]["description"]
+
+    for tool in [
+        "clawchat_search_users",
+        "clawchat_list_moments",
+        "clawchat_create_moment",
+        "clawchat_delete_moment",
+        "clawchat_toggle_moment_reaction",
+        "clawchat_create_moment_comment",
+        "clawchat_reply_moment_comment",
+        "clawchat_delete_moment_comment",
+    ]:
+        description = ctx.tools[tool]["schema"]["description"]
+        assert "Do not use execute" in description
+        assert "direct ClawChat HTTP calls" in description
+
+    assert "Search ClawChat users by username or nickname" in search
+    assert "do not guess a userId" in search
+    assert "moments/dynamics/feed" in list_moments
+    assert "friends-only feed endpoint" in list_moments
+    assert "At least one of text or images" in create_moment
+    assert "do not pass local file paths as images" in create_moment
+    assert "single-level reply" in reply
+    assert "do not use this for top-level comments" in reply
 
 
 def test_plugin_does_not_register_clawchat_skill(monkeypatch, tmp_path):

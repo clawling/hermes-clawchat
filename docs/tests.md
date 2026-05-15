@@ -130,7 +130,7 @@ Verifies reconnect attempt counting, consecutive reconnect counting, and stable-
 
 Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 
-- `register(ctx)` adds the six account/profile/media ClawChat tools and the `/clawchat-activate` slash command, without registering a bundled skill.
+- `register(ctx)` adds the fourteen account/profile/media/search/moment ClawChat tools and the `/clawchat-activate` slash command, without registering a bundled skill.
 - Tool handlers in `clawchat_gateway.plugin_tools` accept and echo `task_id`.
 
 ### `tests/test_plugin.py`
@@ -142,7 +142,7 @@ Comprehensive registration / schema / behavior tests for the repo-root `__init__
 - `test_plugin_platform_check_only_verifies_dependencies` — the registered `check_fn` returns `True` when `_clawchat_dependencies_available` is True, **without** invoking `_clawchat_connection_configured` (separation of dependency check from credential validation).
 - `test_plugin_platform_validation_falls_back_to_home_config` — `validate_config(SimpleNamespace(extra={}))` returns `True` when the merged `$HERMES_HOME/config.yaml` supplies `websocket_url` and the `.env` supplies `CLAWCHAT_TOKEN`.
 - `test_plugin_adapter_factory_merges_home_config` — adapter factory merges `extra` from `$HERMES_HOME/config.yaml` so a sparse runtime config still produces a fully populated `ClawChatConfig`.
-- `test_plugin_registers_all_tools` — registers exactly the six account/profile/media `clawchat_*` tools, all `is_async=True`.
+- `test_plugin_registers_all_tools` — registers exactly the fourteen account/profile/media/search/moment `clawchat_*` tools, all `is_async=True`.
 - `test_plugin_tool_registration_is_delegated_to_gateway_module` — tool registration is delegated to `clawchat_gateway.plugin_tools` rather than kept in the repo-root entrypoint.
 - `test_plugin_registers_native_clawchat_cli_command` — `register(ctx)` exposes the native `clawchat` plugin CLI command through `ctx.register_cli_command`.
 - `test_plugin_registers_clawchat_activate_slash_command` — `register(ctx)` exposes `/clawchat-activate` through `ctx.register_command`.
@@ -199,7 +199,7 @@ Matrix of `parse_inbound_message` edge cases:
 
 ### `tests/test_tools.py`
 
-Handler-level coverage for the six new account/media tools:
+Handler-level coverage for account/media/search/moment tools:
 
 - happy paths for profile fetch, user fetch, friends pagination, profile update, avatar upload, and media upload.
 - config errors for missing config, token, or user id.

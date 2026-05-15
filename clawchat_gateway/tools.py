@@ -131,6 +131,171 @@ async def list_account_friends(
         return _unknown_error(exc)
 
 
+def _positive_int(value: Any, field: str) -> tuple[int | None, dict[str, Any] | None]:
+    if not isinstance(value, int) or value < 1:
+        return None, _validation_error(f"{field} must be an integer >= 1")
+    return value, None
+
+
+async def search_users(q: str | None = None, limit: int | None = None) -> dict[str, Any]:
+    if limit is not None and (not isinstance(limit, int) or not (1 <= limit <= 100)):
+        return _validation_error("limit must be an integer in 1..100")
+
+    client, err = _build_client()
+    if err is not None:
+        return err
+    try:
+        return await client.search_users(q=q or "", limit=limit)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def list_moments(before: int | None = None, limit: int | None = None) -> dict[str, Any]:
+    if before is not None and (not isinstance(before, int) or before < 1):
+        return _validation_error("before must be an integer >= 1")
+    if limit is not None and (not isinstance(limit, int) or not (1 <= limit <= 100)):
+        return _validation_error("limit must be an integer in 1..100")
+
+    client, err = _build_client()
+    if err is not None:
+        return err
+    try:
+        return await client.list_moments(before=before, limit=limit)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def create_moment(
+    text: str | None = None,
+    images: list[str] | None = None,
+) -> dict[str, Any]:
+    if text is not None and not isinstance(text, str):
+        return _validation_error("text must be a string")
+    if images is not None and (
+        not isinstance(images, list) or any(not isinstance(item, str) for item in images)
+    ):
+        return _validation_error("images must be a list of image URLs")
+    if not text and not images:
+        return _validation_error("at least one of text or images is required")
+
+    client, err = _build_client()
+    if err is not None:
+        return err
+    try:
+        return await client.create_moment(text=text, images=images)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def delete_moment(moment_id: int) -> dict[str, Any]:
+    moment_id_value, err = _positive_int(moment_id, "momentId")
+    if err is not None:
+        return err
+
+    client, cerr = _build_client()
+    if cerr is not None:
+        return cerr
+    try:
+        return await client.delete_moment(moment_id_value)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def toggle_moment_reaction(moment_id: int, emoji: str) -> dict[str, Any]:
+    moment_id_value, err = _positive_int(moment_id, "momentId")
+    if err is not None:
+        return err
+    if not isinstance(emoji, str) or not emoji.strip():
+        return _validation_error("emoji is required")
+
+    client, cerr = _build_client()
+    if cerr is not None:
+        return cerr
+    try:
+        return await client.toggle_moment_reaction(moment_id=moment_id_value, emoji=emoji)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def create_moment_comment(moment_id: int, text: str) -> dict[str, Any]:
+    moment_id_value, err = _positive_int(moment_id, "momentId")
+    if err is not None:
+        return err
+    if not isinstance(text, str) or not text.strip():
+        return _validation_error("text is required")
+
+    client, cerr = _build_client()
+    if cerr is not None:
+        return cerr
+    try:
+        return await client.create_moment_comment(moment_id=moment_id_value, text=text)
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def reply_moment_comment(
+    moment_id: int,
+    reply_to_comment_id: int,
+    text: str,
+) -> dict[str, Any]:
+    moment_id_value, err = _positive_int(moment_id, "momentId")
+    if err is not None:
+        return err
+    reply_to_comment_id_value, rerr = _positive_int(reply_to_comment_id, "replyToCommentId")
+    if rerr is not None:
+        return rerr
+    if not isinstance(text, str) or not text.strip():
+        return _validation_error("text is required")
+
+    client, cerr = _build_client()
+    if cerr is not None:
+        return cerr
+    try:
+        return await client.reply_moment_comment(
+            moment_id=moment_id_value,
+            reply_to_comment_id=reply_to_comment_id_value,
+            text=text,
+        )
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
+async def delete_moment_comment(moment_id: int, comment_id: int) -> dict[str, Any]:
+    moment_id_value, err = _positive_int(moment_id, "momentId")
+    if err is not None:
+        return err
+    comment_id_value, cerr = _positive_int(comment_id, "commentId")
+    if cerr is not None:
+        return cerr
+
+    client, berr = _build_client()
+    if berr is not None:
+        return berr
+    try:
+        return await client.delete_moment_comment(
+            moment_id=moment_id_value,
+            comment_id=comment_id_value,
+        )
+    except ClawChatApiError as exc:
+        return _api_error(exc)
+    except Exception as exc:  # noqa: BLE001
+        return _unknown_error(exc)
+
+
 async def update_account_profile(
     nickname: str | None = None,
     avatar_url: str | None = None,
