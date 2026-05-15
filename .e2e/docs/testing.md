@@ -40,8 +40,10 @@ scripts, fixtures, docs, and `.env.example` are checked in.
 
 ## Prerequisites
 
-- Docker daemon running locally with the `nousresearch/hermes-agent`
-  image already pulled (or reachable to pull on first run).
+- Docker daemon running locally with the `nousresearch/hermes-agent:latest`
+  image already pulled (or reachable to pull on first run). The local
+  driver defaults to `latest`; pass a tag or set an image env var to
+  pin a specific Hermes build.
 - `python3` on PATH (used to extract the `code` field from the JSON
   response).
 - A ClawChat user JWT with permission to call
@@ -87,6 +89,20 @@ From the repo root:
 bash .e2e/local_start_test.sh
 ```
 
+By default this uses `nousresearch/hermes-agent:latest`. To pin a
+specific Hermes image tag, pass it as the first argument:
+
+```bash
+bash .e2e/local_start_test.sh v2026.4.30
+```
+
+Equivalent environment-variable forms are also supported:
+
+```bash
+HERMES_AGENT_IMAGE_TAG=v2026.4.30 bash .e2e/local_start_test.sh
+HERMES_AGENT_IMAGE=nousresearch/hermes-agent:v2026.4.30 bash .e2e/local_start_test.sh
+```
+
 To test the current npm CLI installer path instead of the local staged
 checkout path, run:
 
@@ -112,7 +128,8 @@ For `local_start_test.sh`, what happens, in order:
    `git ls-files -co --exclude-standard | tar`. This is what the
    in-container install reads from, so local edits flow into the
    test without a commit/push round-trip.
-6. Runs `nousresearch/hermes-agent chat -q "…"` with three volume
+6. Runs `${HERMES_AGENT_IMAGE}` (default
+   `nousresearch/hermes-agent:latest`) as `chat -q "…"` with three volume
    mounts:
    - `./.e2e/tmp/hermes_data:/opt/data` — the writable data dir for
      this run.
@@ -184,8 +201,10 @@ clean state instead of compounding partial fixes.
 - If the failure is in install or activation, inspect
   `.e2e/tmp/hermes_data/logs/`, `.e2e/tmp/hermes_data/.env`, and
   `.e2e/tmp/hermes_data/config.yaml` after the script exits.
-- To pin a specific Hermes image, override the `image:tag` in
-  `local_start_test.sh` before running.
+- To pin a specific Hermes image, run
+  `bash .e2e/local_start_test.sh v2026.4.30`, set
+  `HERMES_AGENT_IMAGE_TAG=v2026.4.30`, or override the whole image with
+  `HERMES_AGENT_IMAGE=nousresearch/hermes-agent:v2026.4.30`.
 - To debug the runtime adapter without re-running the install half,
   use the `gateway run` invocation from
   [Post-install verification](#post-install-verification-gateway-run)
@@ -204,4 +223,4 @@ clean state instead of compounding partial fixes.
 | `JWT not set in …/.env` | The file exists but `JWT` is empty. |
 | `failed to obtain connect code` | Backend rejected the JWT (expired / wrong audience) or returned a non-zero envelope. The raw response is printed on the previous line. |
 | `missing baseline Hermes data dir: …/tmp/hermes_data_base` | First-time setup not done. Run the bootstrap docker command from the error message, complete first-run setup, then re-run. |
-| Docker `image not found` for `nousresearch/hermes-agent` | `docker pull nousresearch/hermes-agent` first, or set a specific tag. |
+| Docker `image not found` for `nousresearch/hermes-agent:latest` | `docker pull nousresearch/hermes-agent:latest` first, or pin a specific tag such as `bash .e2e/local_start_test.sh v2026.4.30`. |

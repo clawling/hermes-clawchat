@@ -65,7 +65,7 @@ Here is the connect <CODE>: $CODE.
 
 Install and configure ClawChat for Hermes Agent by following the npm CLI
 installation path from:
-https://dddddddddddddtest.clawling.chat/clawchat/install.md
+https://plugin.clawling.chat/clawchat/install.md
 
 Do not use hermes plugins install, do not install from /tmp/hermes-clawchat,
 and do not run the legacy clawchat_gateway.install fallback.

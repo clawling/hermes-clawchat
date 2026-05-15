@@ -38,3 +38,11 @@ def test_local_start_test_removes_stale_installed_plugin_after_seed():
     script = (REPO_ROOT / ".e2e" / "local_start_test.sh").read_text()
 
     assert f"./.e2e/tmp/hermes_data/plugins/{plugin_name}" in script
+
+
+def test_local_start_test_defaults_to_latest_image_and_allows_tag_override():
+    script = (REPO_ROOT / ".e2e" / "local_start_test.sh").read_text()
+
+    assert 'HERMES_AGENT_IMAGE_TAG="${1:-${HERMES_AGENT_IMAGE_TAG:-latest}}"' in script
+    assert 'HERMES_AGENT_IMAGE="${HERMES_AGENT_IMAGE:-${HERMES_AGENT_IMAGE_NAME}:${HERMES_AGENT_IMAGE_TAG}}"' in script
+    assert '"$HERMES_AGENT_IMAGE" chat' in script

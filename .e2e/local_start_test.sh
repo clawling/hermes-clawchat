@@ -1,5 +1,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
+HERMES_AGENT_IMAGE_NAME="${HERMES_AGENT_IMAGE_NAME:-nousresearch/hermes-agent}"
+HERMES_AGENT_IMAGE_TAG="${1:-${HERMES_AGENT_IMAGE_TAG:-latest}}"
+HERMES_AGENT_IMAGE="${HERMES_AGENT_IMAGE:-${HERMES_AGENT_IMAGE_NAME}:${HERMES_AGENT_IMAGE_TAG}}"
 
 if [ ! -f "$ENV_FILE" ]; then
     echo "missing env file: $ENV_FILE (expected JWT=...)" >&2
@@ -37,7 +40,7 @@ fi
 echo "connect code: $CODE"
 
 if [ ! -d ./.e2e/tmp/hermes_data_base ]; then
-    cat >&2 <<'EOF'
+    cat >&2 <<EOF
 missing baseline Hermes data dir: ./.e2e/tmp/hermes_data_base
 
 Each test run is freshly seeded by copying ./.e2e/tmp/hermes_data_base ->
@@ -47,7 +50,7 @@ the first-run setup (model / API keys), then exiting:
 
     mkdir -p ./.e2e/tmp/hermes_data_base
     docker run -it --rm -v ./.e2e/tmp/hermes_data_base:/opt/data \
-        nousresearch/hermes-agent chat
+        "$HERMES_AGENT_IMAGE" chat
 
 After it exits, ./.e2e/tmp/hermes_data_base will hold the initialized
 config Hermes needs and you can re-run this script.
@@ -83,6 +86,6 @@ docker run -it --rm \
     -v ./.e2e/tmp/hermes_data:/opt/data \
     -v ./.e2e/dev_install.md:/opt/dev_install.md:ro \
     -v ./.e2e/tmp/hermes-clawchat:/tmp/hermes-clawchat:ro \
-    nousresearch/hermes-agent chat -q "Here is the connect <CODE>: $CODE; Install and configure clawchat by following the instructions in the local file (use tool:'execute_code' to read it with Python): /opt/dev_install.md"
-#docker run -it --rm  -v ./.e2e/tmp/hermes_data:/opt/data nousresearch/hermes-agent gateway run
-#docker run -it -v ./.e2e/tmp/hermes_data:/opt/data nousresearch/hermes-agent gateway run
+    "$HERMES_AGENT_IMAGE" chat -q "Here is the connect <CODE>: $CODE; Install and configure clawchat by following the instructions in the local file (use tool:'execute_code' to read it with Python): /opt/dev_install.md"
+#docker run -it --rm  -v ./.e2e/tmp/hermes_data:/opt/data "$HERMES_AGENT_IMAGE" gateway run
+#docker run -it -v ./.e2e/tmp/hermes_data:/opt/data "$HERMES_AGENT_IMAGE" gateway run
