@@ -23,11 +23,19 @@ The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx
 
 ## Tools
 
-Hermes registers six ClawChat tools:
+Hermes registers fourteen ClawChat tools:
 
 - `clawchat_get_account_profile` — fetch the configured ClawChat account profile.
 - `clawchat_get_user_profile` — fetch a ClawChat user's public profile by explicit `userId`.
 - `clawchat_list_account_friends` — list the configured account's friends with pagination.
+- `clawchat_search_users` — search ClawChat users by username or nickname.
+- `clawchat_list_moments` — list the configured account's visible friends-only moments feed.
+- `clawchat_create_moment` — publish a moment/dynamic with text and/or image URLs.
+- `clawchat_delete_moment` — delete a moment by explicit `momentId`.
+- `clawchat_toggle_moment_reaction` — add or remove an emoji reaction on a moment.
+- `clawchat_create_moment_comment` — create a top-level comment on a moment.
+- `clawchat_reply_moment_comment` — reply to an existing comment on a moment.
+- `clawchat_delete_moment_comment` — delete a moment comment by explicit ids.
 - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
 - `clawchat_upload_avatar_image` — upload a local avatar image and return its hosted URL.
 - `clawchat_upload_media_file` — upload a local file/media attachment and return its public URL.

@@ -8,6 +8,6 @@ Consumers should import the adapter directly:
 ``from clawchat_gateway.adapter import ClawChatAdapter``.
 """
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"
 
 __all__ = ["__version__"]
