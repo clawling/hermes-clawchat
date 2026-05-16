@@ -10,6 +10,10 @@ def new_frame_id(prefix: str = "req") -> str:
     return f"{prefix}-{uuid.uuid4()}"
 
 
+def current_time_ms() -> int:
+    return int(time.time() * 1000)
+
+
 def encode_frame(frame: dict[str, Any]) -> str:
     return json.dumps(frame, separators=(",", ":"), ensure_ascii=False)
 
@@ -64,10 +68,12 @@ def build_connect_request(
         payload["device_id"] = device_id
     if capabilities is not None:
         payload["capabilities"] = capabilities
+    now_ms = current_time_ms()
     return {
         "version": "2",
         "event": "connect",
         "trace_id": frame_id,
+        "emitted_at": now_ms,
         "payload": payload,
     }
 
@@ -78,11 +84,13 @@ def _message_envelope(
     chat_id: str,
     chat_type: str,
     payload: dict[str, Any],
+    emitted_at: int | None = None,
 ) -> dict[str, Any]:
     return {
         "version": "2",
         "event": event,
         "trace_id": new_frame_id("trace"),
+        "emitted_at": emitted_at if emitted_at is not None else current_time_ms(),
         "chat_id": chat_id,
         "payload": payload,
     }
@@ -111,7 +119,7 @@ def build_message_add_event(
     delta: str,
     sequence: int,
 ) -> dict[str, Any]:
-    now_ms = int(time.time() * 1000)
+    now_ms = current_time_ms()
     return _message_envelope(
         "message.add",
         chat_id=chat_id,
@@ -130,6 +138,7 @@ def build_message_add_event(
             },
             "added_at": now_ms,
         },
+        emitted_at=now_ms,
     )
 
 
@@ -141,7 +150,7 @@ def build_message_done_event(
     fragments: list[dict[str, Any]],
     sequence: int,
 ) -> dict[str, Any]:
-    now_ms = int(time.time() * 1000)
+    now_ms = current_time_ms()
     return _message_envelope(
         "message.done",
         chat_id=chat_id,
@@ -158,6 +167,7 @@ def build_message_done_event(
             },
             "completed_at": now_ms,
         },
+        emitted_at=now_ms,
     )
 
 
@@ -201,12 +211,11 @@ def build_message_failed_event(
     sequence: int,
     reason: str | None = None,
 ) -> dict[str, Any]:
-    now_ms = int(time.time() * 1000)
-    reason_text = reason or "unknown"
+    now_ms = current_time_ms()
+    reason_text = (reason or "").strip()
     payload: dict[str, Any] = {
         "message_id": message_id,
-        "sequence": sequence,
-        "reason": reason_text,
+        "fragments": ([{"kind": "text", "text": reason_text}] if reason_text else []),
         "streaming": {
             "status": "failed",
             "sequence": sequence,
@@ -216,13 +225,12 @@ def build_message_failed_event(
         },
         "completed_at": now_ms,
     }
-    if reason and reason.strip():
-        payload["fragments"] = [{"kind": "text", "text": reason.strip()}]
     return _message_envelope(
         "message.failed",
         chat_id=chat_id,
         chat_type=chat_type,
         payload=payload,
+        emitted_at=now_ms,
     )
 
 
@@ -236,6 +244,27 @@ def build_typing_update_event(
         "version": "2",
         "event": "typing.update",
         "trace_id": new_frame_id("trace"),
+        "emitted_at": current_time_ms(),
         "chat_id": chat_id,
         "payload": {"is_typing": active},
+    }
+
+
+def build_pong_event(*, trace_id: str) -> dict[str, Any]:
+    return {
+        "version": "2",
+        "event": "pong",
+        "trace_id": trace_id,
+        "emitted_at": current_time_ms(),
+        "payload": {},
+    }
+
+
+def build_offline_ack_event(*, batch_id: int) -> dict[str, Any]:
+    return {
+        "version": "2",
+        "event": "offline.ack",
+        "trace_id": new_frame_id("trace"),
+        "emitted_at": current_time_ms(),
+        "payload": {"batch_id": batch_id},
     }

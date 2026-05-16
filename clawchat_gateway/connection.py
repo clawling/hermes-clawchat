@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover
 from clawchat_gateway.config import ClawChatConfig
 from clawchat_gateway.protocol import (
     build_connect_request,
+    build_offline_ack_event,
+    build_pong_event,
     decode_frame,
     encode_frame,
     extract_nonce,
@@ -102,6 +104,7 @@ class ClawChatConnection:
         self._send_queue: deque[_QueuedFrame] = deque()
         self._flushing_send_queue = False
         self._pending_acks: dict[str, _PendingAck] = {}
+        self._inbound_streams: dict[str, dict[str, Any]] = {}
         self._stable_ready_handle: asyncio.TimerHandle | None = None
         self._stable_ready_reset_done = False
 
@@ -412,6 +415,31 @@ class ClawChatConnection:
         ):
             await self._maybe_finish_handshake(frame)
             return
+        if (
+            self._state == ConnectionState.READY
+            and ftype in (None, "event")
+            and frame.get("event")
+            in {"message.created", "message.add", "message.done", "message.failed"}
+        ):
+            await self._handle_stream_lifecycle(frame)
+            return
+        if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "typing.update":
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="typing",
+                    fields=[
+                        ("event_name", frame.get("event")),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                        ("chat_id", frame.get("chat_id")),
+                    ],
+                )
+            )
+            return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") in {"message.send", "message.reply"}:
             sender = frame.get("sender") if isinstance(frame.get("sender"), dict) else {}
             logger.info(
@@ -488,16 +516,7 @@ class ClawChatConnection:
                 )
             )
             if self._ws is not None:
-                await self._ws.send(
-                    encode_frame(
-                        {
-                            "version": "2",
-                            "event": "pong",
-                            "trace_id": trace_id,
-                            "payload": {},
-                        }
-                    )
-                )
+                await self._ws.send(encode_frame(build_pong_event(trace_id=trace_id)))
             return
         if self._state == ConnectionState.READY and ftype in (None, "event") and frame.get("event") == "pong":
             logger.info(
@@ -517,20 +536,7 @@ class ClawChatConnection:
             and ftype in (None, "event")
             and frame.get("event") in {"offline.batch", "offline.ack", "offline.done"}
         ):
-            logger.info(
-                format_ws_log(
-                    event="inbound_control",
-                    account_id=self._account_id,
-                    attempt=self._attempt,
-                    reconnect_count=self._reconnect_count,
-                    state=ConnectionState.READY.value,
-                    action="ignore_legacy",
-                    fields=[
-                        ("event_name", frame.get("event")),
-                        ("trace_id", frame.get("trace_id") or frame.get("id")),
-                    ],
-                )
-            )
+            await self._handle_legacy_offline(frame)
             return
         if self._state == ConnectionState.READY and ftype in (None, "event"):
             logger.info(
@@ -643,6 +649,160 @@ class ClawChatConnection:
             frame.get("trace_id"),
             self._pending_connect_id,
         )
+
+    async def _handle_stream_lifecycle(self, frame: dict[str, Any]) -> None:
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        message_id = payload.get("message_id") if isinstance(payload.get("message_id"), str) else ""
+        event_name = str(frame.get("event") or "")
+        if not message_id:
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="ignore_stream_missing_id",
+                    fields=[
+                        ("event_name", event_name),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                    ],
+                )
+            )
+            return
+
+        if event_name == "message.failed":
+            self._inbound_streams.pop(message_id, None)
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="drop_failed_stream",
+                    fields=[
+                        ("event_name", event_name),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                        ("message_id", message_id),
+                    ],
+                )
+            )
+            return
+
+        stream = self._inbound_streams.setdefault(message_id, {})
+        stream["version"] = frame.get("version") or stream.get("version") or "2"
+        stream["message_mode"] = payload.get("message_mode") or stream.get("message_mode") or "normal"
+        for key in ("chat_id", "chat_type", "sender", "to", "streaming"):
+            value = frame.get(key) if key != "streaming" else payload.get("streaming")
+            if value is not None:
+                stream[key] = value
+        stream["trace_id"] = frame.get("trace_id") or frame.get("id") or stream.get("trace_id")
+        stream["emitted_at"] = frame.get("emitted_at") or stream.get("emitted_at")
+        if isinstance(payload.get("fragments"), list):
+            stream["fragments"] = payload["fragments"]
+
+        if event_name != "message.done":
+            logger.info(
+                format_ws_log(
+                    event="inbound_control",
+                    account_id=self._account_id,
+                    attempt=self._attempt,
+                    reconnect_count=self._reconnect_count,
+                    state=ConnectionState.READY.value,
+                    action="buffer_stream",
+                    fields=[
+                        ("event_name", event_name),
+                        ("trace_id", frame.get("trace_id") or frame.get("id")),
+                        ("message_id", message_id),
+                    ],
+                )
+            )
+            return
+
+        materialized = self._materialize_stream_message(message_id, stream, frame)
+        self._inbound_streams.pop(message_id, None)
+        if materialized is None:
+            return
+        await self._on_message(materialized)
+
+    def _materialize_stream_message(
+        self,
+        message_id: str,
+        stream: dict[str, Any],
+        frame: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        fragments = stream.get("fragments")
+        if not isinstance(fragments, list):
+            return None
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        materialized: dict[str, Any] = {
+            "version": stream.get("version") or frame.get("version") or "2",
+            "event": "message.send",
+            "trace_id": frame.get("trace_id") or stream.get("trace_id") or "",
+            "chat_id": stream.get("chat_id") or frame.get("chat_id") or "",
+            "payload": {
+                "message_id": message_id,
+                "message_mode": stream.get("message_mode") or "normal",
+                "message": {
+                    "body": {"fragments": fragments},
+                    "context": {"mentions": [], "reply": None},
+                },
+            },
+        }
+        emitted_at = frame.get("emitted_at") or stream.get("emitted_at")
+        if emitted_at is not None:
+            materialized["emitted_at"] = emitted_at
+        chat_type = stream.get("chat_type") or frame.get("chat_type")
+        if chat_type:
+            materialized["chat_type"] = chat_type
+        sender = stream.get("sender") if isinstance(stream.get("sender"), dict) else frame.get("sender")
+        if isinstance(sender, dict):
+            materialized["sender"] = sender
+        to = stream.get("to") if isinstance(stream.get("to"), dict) else frame.get("to")
+        if isinstance(to, dict):
+            materialized["to"] = to
+        streaming = payload.get("streaming") or stream.get("streaming")
+        if isinstance(streaming, dict):
+            materialized["payload"]["message"]["streaming"] = streaming
+        return materialized
+
+    async def _handle_legacy_offline(self, frame: dict[str, Any]) -> None:
+        event_name = frame.get("event")
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        logger.info(
+            format_ws_log(
+                event="inbound_control",
+                account_id=self._account_id,
+                attempt=self._attempt,
+                reconnect_count=self._reconnect_count,
+                state=ConnectionState.READY.value,
+                action="legacy_offline",
+                fields=[
+                    ("event_name", event_name),
+                    ("trace_id", frame.get("trace_id") or frame.get("id")),
+                ],
+            )
+        )
+        if event_name != "offline.batch":
+            return
+        items = payload.get("items") if isinstance(payload.get("items"), list) else []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("event") in {
+                "message.send",
+                "message.reply",
+                "message.created",
+                "message.add",
+                "message.done",
+                "message.failed",
+                "typing.update",
+            }:
+                await self._dispatch_inbound(item)
+        batch_id = payload.get("batch_id")
+        if isinstance(batch_id, int) and self._ws is not None:
+            await self._ws.send(encode_frame(build_offline_ack_event(batch_id=batch_id)))
 
     def _queued_frame(
         self,

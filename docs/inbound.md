@@ -1,6 +1,6 @@
 # Inbound — `clawchat_gateway/inbound.py`
 
-Parses a ClawChat `message.send` frame into the `InboundMessage` shape used by the adapter.
+Parses a ClawChat `message.send` frame into the `InboundMessage` shape used by the adapter. Inbound streaming lifecycle frames are handled one layer earlier by `ClawChatConnection`: `message.created` / `message.add` are buffered, `message.done` is materialized into a `message.send`-compatible envelope, and only that materialized envelope reaches `parse_inbound_message`.
 
 ## Data class
 

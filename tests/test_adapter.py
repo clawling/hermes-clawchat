@@ -854,8 +854,9 @@ async def test_on_run_failed_emits_message_failed_and_cleans_run():
     assert [frame["event"] for frame in adapter._connection.sent_frames] == ["message.failed"]
     failed = adapter._connection.sent_frames[0]
     assert failed["payload"]["message_id"] == first.message_id
-    assert failed["payload"]["sequence"] == 0
     assert failed["payload"]["streaming"]["status"] == "failed"
+    assert failed["payload"]["streaming"]["sequence"] == 0
+    assert failed["payload"]["fragments"] == [{"kind": "text", "text": "boom"}]
     assert first.message_id not in adapter._active_runs_by_id
 
 

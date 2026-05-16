@@ -37,7 +37,7 @@ OnStateChange = Callable[[ConnectionState], Awaitable[None]]
 ClawChatConnection(config: ClawChatConfig, *, on_message: OnMessage, on_state_change: OnStateChange | None = None, account_id: str = "default")
 ```
 
-Initialises state to `DISCONNECTED`, no supervisor, no websocket, no hello-wait future, empty structured `_send_queue`, `_flushing_send_queue=False`, empty pending ack map, and a reconnect tracker.
+Initialises state to `DISCONNECTED`, no supervisor, no websocket, no hello-wait future, empty structured `_send_queue`, `_flushing_send_queue=False`, empty pending ack map, empty inbound stream cache, and a reconnect tracker.
 
 ### Public lifecycle
 
@@ -94,11 +94,24 @@ Final state is `CLOSED`.
 | `_start_ack_timer_if_needed(queued)` | For ackable frames with an ack future, starts the timeout only after successful WebSocket write. |
 | `_handle_ack(frame)` | Resolves pending ack by `trace_id`, logs `ack_received`, or logs `ack_unmatched` when no pending waiter exists. Ack timeout rejects the waiting send call and does not reconnect. |
 
+### Inbound stream lifecycle
+
+| Method | Purpose |
+|---|---|
+| `async _handle_stream_lifecycle(frame)` | Handles READY-state `message.created` / `message.add` / `message.done` / `message.failed`. Created/add frames are buffered by `payload.message_id` without dispatching to Hermes. `message.done` materializes the final cumulative fragments into a `message.send`-compatible envelope and calls `_on_message` once. `message.failed` drops any cached stream and logs `drop_failed_stream`. Frames without `payload.message_id` log `ignore_stream_missing_id`. |
+| `_materialize_stream_message(message_id, stream, frame)` | Builds the synthetic `message.send` envelope from cached stream metadata and final fragments: root routing/sender fields are preserved, `payload.message_id` is retained, `payload.message.body.fragments` receives final cumulative fragments, `payload.message.context` defaults to empty mentions and null reply, and `payload.message.streaming` is copied when present. |
+
+### Legacy offline replay
+
+| Method | Purpose |
+|---|---|
+| `async _handle_legacy_offline(frame)` | Logs legacy `offline.batch` / `offline.ack` / `offline.done` as control events. For documented `offline.batch.payload.items`, replays nested `message.send`, `message.reply`, stream lifecycle, and `typing.update` envelopes through normal READY dispatch. If `payload.batch_id` is an int, sends protocol-complete `offline.ack` with root `emitted_at`. Non-documented payload keys such as `messages` are left unexpanded. |
+
 ### Read loop + dispatch
 
 | Method | Purpose |
 |---|---|
 | `async _read_loop(ws)` | `async for raw in ws`: decode; on malformed frame log a warning and continue; otherwise log and call `_dispatch_inbound`. |
-| `async _dispatch_inbound(frame)` | During `HANDSHAKING`, route `connect.challenge` to `_handle_challenge` and `hello-ok` / `hello-fail` / `res` frames to `_maybe_finish_handshake`. While `READY`, only `message.send` and `message.reply` dispatch to `_on_message(frame)`. `message.ack`, JSON `pong`, and legacy `offline.batch` / `offline.ack` / `offline.done` are consumed by the connection/control layer; JSON `ping` is answered with a JSON `pong` and then consumed. `interaction.submit`, stream lifecycle events, and unknown events log `inbound_ignored` and do not trigger a Hermes agent reply. |
+| `async _dispatch_inbound(frame)` | During `HANDSHAKING`, route `connect.challenge` to `_handle_challenge` and `hello-ok` / `hello-fail` / `res` frames to `_maybe_finish_handshake`. While `READY`, materialized `message.send` and `message.reply` dispatch to `_on_message(frame)`. Stream lifecycle frames are buffered and materialized by `_handle_stream_lifecycle`; `typing.update`, `message.ack`, JSON `pong`, and legacy offline control events stay in the connection/control layer. JSON `ping` is answered with a protocol-complete JSON `pong` carrying root `emitted_at`. Unknown events log `inbound_ignored` and do not trigger a Hermes agent reply. |
 | `_schedule_stable_ready_reset()` / `_cancel_stable_ready_reset()` | Start or cancel the five-second stable-ready timer. The timer is cancelled on stop or disconnect before the stable window completes. |
 | `async _handle_heartbeat_timeout()` | Logs canonical `heartbeat_timeout` and closes the socket so the supervisor schedules reconnect. WebSocket protocol ping/pong remains the liveness mechanism; JSON `ping`/`pong` are ordinary protocol frames. |

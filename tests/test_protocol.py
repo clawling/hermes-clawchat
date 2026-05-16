@@ -6,6 +6,8 @@ from clawchat_gateway.protocol import (
     build_message_created_event,
     build_message_done_event,
     build_message_failed_event,
+    build_offline_ack_event,
+    build_pong_event,
     build_message_reply_event,
     build_typing_update_event,
     new_frame_id,
@@ -21,7 +23,9 @@ def test_new_frame_id_uses_prefixed_uuid():
     _assert_prefixed_uuid(new_frame_id("trace"), "trace")
 
 
-def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields():
+def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields(monkeypatch):
+    monkeypatch.setattr("clawchat_gateway.protocol.time.time", lambda: 1234.567)
+
     frame = build_connect_request(
         frame_id="trace-1",
         token="tok",
@@ -34,6 +38,7 @@ def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields():
         "version": "2",
         "event": "connect",
         "trace_id": "trace-1",
+        "emitted_at": 1234567,
         "payload": {
             "token": "tok",
             "nonce": "nonce-1",
@@ -45,6 +50,84 @@ def test_build_connect_request_uses_msghub_payload_without_legacy_auth_fields():
     assert ("sig" + "nature") not in frame["payload"]
     assert ("client_" + "id") not in frame["payload"]
     assert ("client_" + "version") not in frame["payload"]
+
+
+def test_outbound_builders_include_root_emitted_at(monkeypatch):
+    monkeypatch.setattr("clawchat_gateway.protocol.time.time", lambda: 1234.567)
+
+    frames = [
+        build_connect_request(frame_id="trace-1", token="tok", nonce="nonce-1"),
+        build_message_created_event(chat_id="c1", chat_type="direct", message_id="m1"),
+        build_message_add_event(chat_id="c1", chat_type="direct", message_id="m1", full_text="hi", delta="hi", sequence=0),
+        build_message_done_event(chat_id="c1", chat_type="direct", message_id="m1", fragments=[{"kind": "text", "text": "hi"}], sequence=0),
+        build_message_failed_event(chat_id="c1", chat_type="direct", message_id="m1", sequence=0, reason="boom"),
+        build_message_reply_event(chat_id="c1", chat_type="direct", message_id="m1", fragments=[{"kind": "text", "text": "hi"}], include_message_id=True),
+        build_typing_update_event(chat_id="c1", chat_type="direct", active=True),
+        build_pong_event(trace_id="ping-1"),
+        build_offline_ack_event(batch_id=7),
+    ]
+
+    for frame in frames:
+        assert frame["emitted_at"] == 1234567
+
+
+def test_streaming_builder_payload_times_match_root_emitted_at(monkeypatch):
+    monkeypatch.setattr("clawchat_gateway.protocol.time.time", lambda: 1234.567)
+
+    add = build_message_add_event(
+        chat_id="c1",
+        chat_type="direct",
+        message_id="m1",
+        full_text="hello",
+        delta="hello",
+        sequence=0,
+    )
+    done = build_message_done_event(
+        chat_id="c1",
+        chat_type="direct",
+        message_id="m1",
+        fragments=[{"kind": "text", "text": "hello"}],
+        sequence=0,
+    )
+    failed = build_message_failed_event(
+        chat_id="c1",
+        chat_type="direct",
+        message_id="m1",
+        sequence=0,
+        reason="boom",
+    )
+
+    assert add["payload"]["added_at"] == add["emitted_at"]
+    assert done["payload"]["completed_at"] == done["emitted_at"]
+    assert done["payload"]["streaming"]["completed_at"] == done["emitted_at"]
+    assert failed["payload"]["completed_at"] == failed["emitted_at"]
+    assert failed["payload"]["streaming"]["completed_at"] == failed["emitted_at"]
+
+
+def test_build_message_failed_event_uses_stream_done_payload_shape(monkeypatch):
+    monkeypatch.setattr("clawchat_gateway.protocol.time.time", lambda: 1234.567)
+
+    env = build_message_failed_event(
+        chat_id="c1",
+        chat_type="direct",
+        message_id="m1",
+        sequence=2,
+        reason="boom",
+    )
+
+    assert env["event"] == "message.failed"
+    assert env["payload"] == {
+        "message_id": "m1",
+        "fragments": [{"kind": "text", "text": "boom"}],
+        "streaming": {
+            "status": "failed",
+            "sequence": 2,
+            "mutation_policy": "append_text_only",
+            "started_at": None,
+            "completed_at": 1234567,
+        },
+        "completed_at": 1234567,
+    }
 
 
 def test_client_originated_business_frames_omit_root_chat_type_and_sender():
@@ -141,7 +224,6 @@ def test_build_message_failed_event_uses_failed_stream_payload():
     )
     assert env["event"] == "message.failed"
     assert env["payload"]["message_id"] == "m1"
-    assert env["payload"]["sequence"] == 2
     assert env["payload"]["streaming"]["status"] == "failed"
     assert env["payload"]["streaming"]["sequence"] == 2
     assert env["payload"]["fragments"] == [{"kind": "text", "text": "boom"}]

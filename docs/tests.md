@@ -116,14 +116,15 @@ Patches `connection._ws_connect_impl` with `FakeClawChatServer.connect` and exer
 - Connections answer `connect.challenge` with the msghub `ConnectPayload` and wait for `hello-ok` before `READY`.
 - Matching `hello-fail` logs `auth_failed` and stops reconnect.
 - `connect.challenge` frames are ignored after the connection is already `READY`.
-- `message.send` and `message.reply` dispatch after the challenge handshake; `interaction.submit`, stream lifecycle, legacy offline, ack, heartbeat, and unknown events remain in the connection/control layer.
+- `message.send` and `message.reply` dispatch after the challenge handshake; inbound stream lifecycle frames buffer by `message_id` and materialize once on `message.done`; `message.failed` drops cached streams without dispatch; `typing.update`, ack, heartbeat, and unknown events remain in the connection/control layer.
+- Legacy `offline.batch.payload.items` dispatches documented nested envelopes and sends `offline.ack` for `batch_id`; non-documented legacy shapes remain control-only.
 - Bearer auth header is present on connect.
 - Correct subprotocols are sent.
 - `hello-fail` frames do not affect an already-ready connection.
 - Outbound frames queued before `READY` flush in order after `READY`; queue max is 128 and full queues drop the oldest frame.
 - Canonical `clawchat.ws` logs cover connect, handshake, reconnect, queue, ack, heartbeat, and inbound dispatch/control/ignored events.
 - Ack tracking waits only for `message.send` / `message.reply`, starts the timer after actual WebSocket write, rejects without reconnect on timeout, and logs unmatched ack frames.
-- JSON `ping` sends JSON `pong`; JSON `pong` is logged and ignored; heartbeat timeout logs and schedules reconnect.
+- JSON `ping` sends a protocol-complete JSON `pong` with root `emitted_at`; JSON `pong` is logged and ignored; heartbeat timeout logs and schedules reconnect.
 - Queued frames survive a failed flush + reconnect.
 - A send failure while `READY` re-queues for the next connection.
 - Backoff progresses both for repeated `connect` failures and for flapping `READY` sessions shorter than `BACKOFF_RESET_AFTER_SECONDS`; after a reconnected session stays ready for the stable window, `reconnect_backoff_reset` logs immediately while ready and later send logs use `reconnect_count=0`.
