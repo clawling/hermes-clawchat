@@ -1,50 +1,45 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Guidance for coding agents working in this repository.
 
-## Keep docs in sync with code
+## Project overview
 
-Always read the relevant doc before changing a feature, and update it after. Whenever you add, remove, or change a Hermes tool, CLI subcommand, env var, config field, or wire-protocol behavior, update the matching file in the same change set:
+This repository is a Hermes Agent plugin that integrates the ClawChat messaging platform.
 
-- `README.md`, `install.md`, `.e2e/dev_install.md` — install/quick-start, env vars, user-visible flows
-- `plugin.yaml` — manifest (`requires_env`, `provides_tools`, `provides_hooks`); must match what `register(ctx)` actually registers
-- `docs/` per-module references — index at `docs/README.md`; one doc per `clawchat_gateway/*.py` module, plus `docs/architecture.md` (boot sequence, data flow, design choices, env vars) and `docs/clawchat-protocol.md` (wire-protocol spec; `docs/protocol.md` is the Python builder API)
-- This `AGENTS.md` — only the orientation, command quick-reference, and env-var summary below; deep-dive material lives in `docs/`
+- The plugin targets the Hermes v0.12.0+ plugin/platform API.
+- The plugin entrypoint is `__init__.py` at the repository root.
+- The plugin manifest is `plugin.yaml`.
+- The gateway adapter package is `clawchat_gateway/`.
+- The local Hermes Agent source checkout under `tmp/hermes-agent/` is the reference for host APIs, platform contracts, and Hermes release behavior.
 
-Code and docs must not drift.
+## Documentation index
 
-## What this repo is
+Use `docs/` as the source of truth for implementation details.
 
-A **Hermes Agent plugin** that integrates the ClawChat messaging platform. It is an **installable plugin made for hermes-agent and will not be merged into the original hermes-agent project** — it is loaded at runtime by hermes-agent. On Hermes v0.12.0+ it registers the `clawchat` gateway platform via `ctx.register_platform(...)`; older Hermes builds without the platform registry API are not supported.
+- `docs/README.md` — documentation index and per-module catalogue.
+- `docs/architecture.md` — boot sequence, runtime data flow, design choices, and environment-variable overview.
+- `docs/plugin-entrypoint.md` — plugin entrypoint, registration behavior, and manifest relationship.
+- `docs/config.md` — configuration fields and environment-variable resolution.
+- `docs/adapter.md`, `docs/connection.md`, `docs/inbound.md`, `docs/protocol.md` — gateway runtime and protocol-builder behavior.
+- `docs/clawchat-protocol.md` — ClawChat wire-protocol reference.
+- `docs/plugin-tools.md`, `docs/tools.md` — Hermes tool schemas, registration, and handlers.
+- `docs/activate.md`, `docs/cli.md`, `docs/commands.md`, `docs/setup.md` — activation, native CLI, slash command, and gateway setup flows.
+- `docs/media-runtime.md`, `docs/profile.md`, `docs/runtime-defaults.md` — media handling, profile CLI, and startup defaults.
+- `docs/tests.md` — unit-test harness, fake Hermes runtime, and test coverage map.
+- `.e2e/docs/testing.md` — E2E test documentation for the real Hermes/ClawChat environment harness.
 
-The root `__init__.py` is the plugin entrypoint; `plugin.yaml` is the manifest; `clawchat_gateway/` is the gateway adapter package (also pip-installable as `clawchat-gateway`).
+## Project constraints
 
-The source code of hermes-agent is available locally at `tmp/hermes-agent/` — refer to its code and changelog (`RELEASE_v0.*.md`) when you need to understand host APIs, the platform registry contract, or behavior changes across Hermes versions. When modifying the plugin, follow the official guidelines of hermes-agent as much as possible — prefer the documented plugin/platform APIs over ad-hoc patching, and match the host's conventions (naming, lifecycle, error surface, config shape) so the plugin behaves like a first-party platform.
+- Keep `AGENTS.md` limited to project orientation, documentation navigation, top-level collaboration rules, and test entry points. Do not put implementation details here.
+- Keep code behavior, fields, protocols, lifecycle details, error handling, configuration resolution, compatibility notes, and API-contract details in the matching `docs/` files.
+- Before changing a feature, read the relevant `docs/` page. After changing behavior, update the matching `docs/` page in the same change set.
+- If Hermes Agent APIs or platform contracts change, consult `tmp/hermes-agent/` source and changelogs first, then update the relevant code and `docs/` files.
+- Treat `tmp/hermes-agent/` as a host API reference. Do not solve plugin requirements by patching that checkout.
+- Do not write, fabricate, or guess secrets.
 
-For boot sequence, runtime data flow, design choices, the self-echo guard rationale, and the per-module catalogue, see `docs/architecture.md` and `docs/README.md`.
+## Test cases
 
-## Common commands
-
-All runtime CLIs must use the **Hermes Python venv**, not the system Python, because the adapter imports `gateway.platforms.base` / `gateway.config` from hermes-agent at runtime. Tests stub these (see `docs/tests.md`), so the system Python is fine for tests only.
-
-- Test runner: `pytest` (single test: `pytest path::test_name`).
-- CLI references: `docs/activate.md`, `docs/profile.md`, `docs/runtime-defaults.md`.
-- End-user install on Hermes v0.12.0+: `hermes plugins install clawling/hermes-clawchat && hermes plugins enable clawchat`.
-
-## Testing
-
-`tests/conftest.py` inserts the repo root onto `sys.path` and `tests/fake_hermes.py` injects stub modules for `gateway`, `gateway.config`, `gateway.platforms`, and `gateway.platforms.base` so the adapter can be imported without a real hermes-agent checkout. When adding imports from `gateway.*` in production code, extend `fake_hermes.py` or the test will fail at import time. Pytest runs in `asyncio_mode = "auto"`. Full reference: `docs/tests.md`.
-
-For real-environment testing — exercising the plugin against a live ClawChat backend and the actual `nousresearch/hermes-agent` Docker image, or reproducing a runtime bug that the unit tests can't reach — use the harness under `.e2e/`. See `.e2e/docs/testing.md` for the full setup and run procedure (driver: `.e2e/local_start_test.sh`, baseline data dir: `.e2e/tmp/hermes_data_base/`, install spec read by the agent: `.e2e/dev_install.md`).
-
-Note: the `.e2e/` harness has two prerequisites that **require manual human setup** and cannot be produced by an agent — a valid JWT in `.e2e/.env` (issued to a logged-in human) and the baseline `.e2e/tmp/hermes_data_base/` (built once via interactive Hermes first-run). If either is missing, stop and ask the human to provide them; do not attempt to fabricate them.
-
-## Environment variables
-
-Quick reference; full descriptions and resolution order in `docs/architecture.md` (Environment variables) and `docs/config.md`.
-
-- `HERMES_HOME` — Hermes data dir (default `~/.hermes`).
-- `HERMES_DIR` / `HERMES_AGENT_DIR` — hermes-agent install dir (default `$HERMES_HOME/hermes-agent`, or `/opt/hermes` if present).
-- `CLAWCHAT_WEBSOCKET_URL` / `CLAWCHAT_WS_URL`, `CLAWCHAT_BASE_URL`, `CLAWCHAT_TOKEN`, `CLAWCHAT_REFRESH_TOKEN`, `CLAWCHAT_USER_ID`, `CLAWCHAT_REPLY_MODE`, `CLAWCHAT_GROUP_MODE`, `CLAWCHAT_MEDIA_LOCAL_ROOTS` — override values in `platforms.clawchat.extra` at hermes-agent startup.
-- `CLAWCHAT_ALLOWED_USERS`, `CLAWCHAT_ALLOW_ALL_USERS` — auth allowlist.
-- `CLAWCHAT_DEVICE_ID` — override the auto-derived device id.
+- Default unit-test command: `pytest`.
+- Single-test command: `pytest tests/test_x.py::test_name`.
+- Unit-test selection guide: `docs/tests.md`.
+- Real-environment E2E test documentation: `.e2e/docs/testing.md`.

@@ -2,6 +2,22 @@
 
 Pytest-asyncio with `asyncio_mode = "auto"` (from `pyproject.toml`), so async tests do not need `@pytest.mark.asyncio`. Run with `pytest`, or target a single file/test (`pytest tests/test_adapter.py::test_name`).
 
+## Quick reference
+
+- Default unit-test command: `pytest`.
+- Single-test command: `pytest tests/test_x.py::test_name`.
+- Plugin and manifest changes: `tests/test_plugin.py`, `tests/test_git_plugin.py`, `tests/test_plugin_manifest.py`.
+- Config and environment changes: `tests/test_config.py`, `tests/test_runtime_defaults.py`.
+- Adapter and runtime changes: `tests/test_adapter.py`, `tests/test_connection.py`.
+- Protocol and inbound parsing changes: `tests/test_protocol.py`, `tests/test_inbound.py`.
+- CLI and activation changes: `tests/test_activate.py`, `tests/test_clawchat_cli.py`, `tests/test_clawchat_command.py`.
+- Media, profile, and tool-handler changes: `tests/test_media_runtime.py`, `tests/test_profile.py`, `tests/test_tools.py`.
+- Real-environment E2E test documentation lives under `.e2e/docs/`; start with `.e2e/docs/testing.md`.
+- E2E prerequisites require human-provided `.e2e/.env` JWT and `.e2e/tmp/hermes_data_base/` baseline data. If either is missing, stop and ask the user; do not fabricate or auto-generate them.
+- Common E2E command: `bash .e2e/local_start_test.sh`.
+- NPM installer E2E command: `bash .e2e/npm_start_test.sh`.
+- Runtime gateway verification follows the `gateway run` section in `.e2e/docs/testing.md`.
+
 ## Harness
 
 ### `tests/conftest.py`
