@@ -21,7 +21,7 @@ Use `docs/` as the source of truth for implementation details.
 - `docs/plugin-entrypoint.md` — plugin entrypoint, registration behavior, and manifest relationship.
 - `docs/config.md` — configuration fields and environment-variable resolution.
 - `docs/adapter.md`, `docs/connection.md`, `docs/inbound.md`, `docs/protocol.md` — gateway runtime and protocol-builder behavior.
-- `docs/clawchat-protocol.md` — ClawChat wire-protocol reference.
+- `docs/clawchat-protocol-reference.md` — ClawChat wire-protocol reference.
 - `docs/plugin-tools.md`, `docs/tools.md` — Hermes tool schemas, registration, and handlers.
 - `docs/activate.md`, `docs/cli.md`, `docs/commands.md`, `docs/setup.md` — activation, native CLI, slash command, and gateway setup flows.
 - `docs/media-runtime.md`, `docs/profile.md`, `docs/runtime-defaults.md` — media handling, profile CLI, and startup defaults.

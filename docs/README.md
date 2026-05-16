@@ -53,5 +53,4 @@ Per-module catalogue of structures and functions. For runtime flow and the boot 
 
 | File | Purpose |
 |---|---|
-| [clawchat-protocol.md](./clawchat-protocol.md) | ClawChat Protocol v2 wire spec — event names, payload fields, error codes, sequence diagrams |
-| [openclaw-clawchat.md](./openclaw-clawchat.md) | Cross-reference: the OpenClaw counterpart plugin (`@newbase-clawchat/openclaw-clawchat`). Useful when changing wire shape, since both adapters must move together. |
+| [clawchat-protocol-reference.md](./clawchat-protocol-reference.md) | ClawChat Protocol v2 wire spec — event names, payload fields, error codes, sequence diagrams |

@@ -2,7 +2,7 @@
 
 Pure frame builders and encoding helpers for ClawChat Protocol v2. No I/O, no async, no shared state — every function is a pure transform from arguments to a new frame `dict` (or string / bytes).
 
-For the wire-protocol semantics (event names, payload field meanings, error codes), see [`clawchat-protocol.md`](./clawchat-protocol.md). This file documents the Python module surface.
+For the wire-protocol semantics (event names, payload field meanings, error codes), see [`clawchat-protocol-reference.md`](./clawchat-protocol-reference.md). This file documents the Python module surface.
 
 ## Encoding
 
@@ -58,4 +58,4 @@ envelopes after `hello-ok`; legacy `offline.batch`, `offline.ack`, and
 
 - Every builder is **pure**: timestamps come from `time.time()` at call time, but no shared state or locks. Tests can call them directly and assert on the dict shape.
 - New events should preserve the `_message_envelope` skeleton (`version: "2"`, `trace_id` from `new_frame_id`) so the connection-layer logging and dispatcher remain uniform.
-- When you add a new `streaming.status` value, also update the corresponding state-machine handling in `adapter.py::_ActiveRun` and the receiver expectations in `clawchat-protocol.md`.
+- When you add a new `streaming.status` value, also update the corresponding state-machine handling in `adapter.py::_ActiveRun` and the receiver expectations in `clawchat-protocol-reference.md`.
