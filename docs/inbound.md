@@ -20,7 +20,7 @@ class InboundMessage:
     media_types: list[str] = field(default_factory=list)
 ```
 
-- `chat_id`, `chat_type` — pulled from the envelope; `chat_type` defaults to `"direct"`.
+- `chat_id`, `chat_type` — pulled from the envelope; `chat_type` must be `"direct"` or `"group"`.
 - `sender_id`, `sender_name` — from the envelope `sender` object.
 - `text` — newline-joined concatenation of all text fragments, with media fragments rendered inline as Markdown.
 - `raw_message` — the full original envelope (stored for downstream consumers).
@@ -47,6 +47,7 @@ Returns `None` (so the adapter drops the frame) when:
 - `payload` is not a dict.
 - `payload.message` is not a dict.
 - `message.context` is not a dict.
+- `chat_type` is missing or is not `"direct"` / `"group"`.
 - `chat_type == "group"` **and** `config.group_mode == "mention"` **and** the bot's `config.user_id` is not in `context.mentions`. The default `group_mode` is `"all"`, so mention filtering is opt-in.
 - `envelope.sender` is not a dict.
 

@@ -22,7 +22,7 @@ Pytest-asyncio with `asyncio_mode = "auto"` (from `pyproject.toml`), so async te
 
 ### `tests/conftest.py`
 
-Inserts `src/` onto `sys.path`, then calls `fake_hermes.install()` to register stub modules for `gateway`, `gateway.config`, `gateway.platforms`, `gateway.platforms.base`. Every test file pulls in this harness automatically.
+Inserts the repo root onto `sys.path`, then calls `fake_hermes.install()` to register stub modules for `gateway`, `gateway.config`, `gateway.platforms`, `gateway.platforms.base`, `hermes_cli`, and `hermes_cli.config`. Every test file pulls in this harness automatically.
 
 ### `tests/fake_hermes.py` — hermes-agent stubs
 
@@ -31,10 +31,10 @@ Provides in-process replacements so the adapter can be imported without a real h
 - `_Platform` enum (`CLAWLING`, `QQBOT`, `CLAWCHAT`).
 - `_MessageType` enum (`TEXT`, `IMAGE`).
 - `_SessionSource` dataclass (`platform`, `chat_id`, `user_id`, `chat_name`, `chat_type`, `thread_id`).
-- `_MessageEvent` dataclass (all the fields the adapter sets: `text`, `source`, `raw_message`, `media_urls`, `media_types`, `reply_to_message_id`, `reply_to_text`, `auto_skill`, `channel_prompt`, `timestamp`).
+- `_MessageEvent` dataclass (all the fields the adapter sets: `text`, `source`, `raw_message`, `message_id`, `media_urls`, `media_types`, `reply_to_message_id`, `reply_to_text`, `auto_skill`, `channel_prompt`, `internal`, `timestamp`).
 - `_SendResult` dataclass.
 - `_BasePlatformAdapter` base class with `build_source()` and `handle_message()` — the test subclass's `handled: list[_MessageEvent]` records everything the adapter would have dispatched to hermes-agent.
-- `install()` — writes the stub module objects into `sys.modules` so `from gateway.platforms.base import BasePlatformAdapter` resolves here.
+- `install()` — writes the stub module objects into `sys.modules` so `from gateway.platforms.base import BasePlatformAdapter` and `from hermes_cli.config import ...` resolve here.
 
 When you add a new import from `gateway.*` in production code, extend `fake_hermes.py` or tests will fail at import time.
 
@@ -175,7 +175,7 @@ Static checks that `plugin.yaml` has `kind: platform`, `requires_env == ["CLAWCH
 
 ### `tests/test_e2e_install_docs.py`
 
-Static checks for the Docker E2E install harness: `.e2e/dev_install.md` must uninstall the real manifest plugin name (`clawchat`), and `.e2e/local_start_test.sh` must clear stale installed plugin directories copied from the baseline before staging local source.
+Static checks for the Docker E2E install harness: `.e2e/dev_install.md` must uninstall the real manifest plugin name (`clawchat`) and use the v0.12-compatible activation entrypoint; install docs / README must include that entrypoint; `.e2e/local_start_test.sh` must clear stale installed plugin directories copied from the baseline and support the local image-tag override.
 
 ### `tests/test_self_echo_hook.py`
 

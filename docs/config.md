@@ -73,6 +73,6 @@ Field groups:
 - Reads `platform_config.extra` (default `{}`).
 - Nested `extra["stream"]` provides stream tunables.
 - `media_local_roots` from `extra["media_local_roots"]` is coerced to a tuple.
-- Booleans for `show_tools_output`, `show_tool_progress`, `show_think_output`, and `enable_rich_interactions` are force-cast with `bool(...)` so truthy strings from env vars round-trip correctly.
+- Booleans for `show_tools_output`, `show_tool_progress`, `show_think_output`, and `enable_rich_interactions` are read from `extra` and force-cast with `bool(...)`; these fields are not surfaced as `CLAWCHAT_*` env vars.
 
-**When extending:** add the new field with a default, add a snake_case `_get_config_value` lookup in `from_platform_config`, and update any writer that persists config (e.g., `activate.persist_activation`, `install.configure_clawchat_streaming`) so the roundtrip stays consistent.
+**When extending:** add the new field with a default, add a snake_case `_get_config_value` lookup in `from_platform_config`, and update any writer that persists config (e.g., `activate.persist_activation`, `runtime_defaults.configure_clawchat_streaming`) so the roundtrip stays consistent.

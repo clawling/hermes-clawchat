@@ -52,7 +52,7 @@ Every frame on the wire is a JSON object with a uniform top level:
 | `version` | string | always | Currently `"2"`. |
 | `event` | string | always | Event name (see taxonomy). |
 | `trace_id` | string | always | Client-chosen on uplink; echoed by server on the matching response. |
-| `emitted_at` | int64 | always | Milliseconds since epoch. Server restamps on `typing.update` and streaming events. |
+| `emitted_at` | int64 | server downlinks / optional client uplinks | Milliseconds since epoch. Current Python builders omit it on client-originated frames and rely on server-side timestamps / payload-level stream timestamps. |
 | `chat_id` | string | business events | Drives routing. See *Canonical routing objects*. |
 | `chat_type` | string | server-stamped downlinks | `"direct"` or `"group"`. Clients MUST omit on uplink. |
 | `to` | object | business events | UI context only; not used for routing. MAY be omitted. |
@@ -380,8 +380,8 @@ Intentionally minimal — opens the stream:
 {
   "version": "2",
   "event": "message.created",
+  "trace_id": "trace-created-01K...",
   "chat_id": "chat-alice",
-  "chat_type": "direct",
   "payload": { "message_id": "agent-stream-01K..." }
 }
 ```
@@ -394,8 +394,8 @@ Each delta carries BOTH cumulative `text` and the new `delta`:
 {
   "version": "2",
   "event": "message.add",
+  "trace_id": "trace-add-01K...",
   "chat_id": "chat-alice",
-  "chat_type": "direct",
   "payload": {
     "message_id": "agent-stream-01K...",
     "sequence": 3,
@@ -423,8 +423,8 @@ Carries the full merged final fragment list:
 {
   "version": "2",
   "event": "message.done",
+  "trace_id": "trace-done-01K...",
   "chat_id": "chat-alice",
-  "chat_type": "direct",
   "payload": {
     "message_id": "agent-stream-01K...",
     "fragments": [{ "kind": "text", "text": "Hello, world" }],
@@ -449,9 +449,7 @@ Client → server reply intent:
   "version": "2",
   "event": "message.reply",
   "trace_id": "trace-reply-up-01HVB6T1A2B3C4D5E6F7G8H9J0",
-  "emitted_at": 1776162601800,
   "chat_id": "chat-01HVB6R6XQ9J4S5T6U7V8W9X0Y",
-  "to": { "id": "chat-01HVB6R6XQ9J4S5T6U7V8W9X0Y", "type": "direct" },
   "payload": {
     "message_mode": "normal",
     "message": {

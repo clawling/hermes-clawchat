@@ -42,7 +42,7 @@ class DownloadedMedia:
 | Function | Signature | Purpose |
 |---|---|---|
 | `infer_media_kind_from_mime` | `(mime: str) -> str` | `"image" / "audio" / "video" / "file"` from a MIME prefix. |
-| `derive_base_url` | `(*, websocket_url: str, base_url: str) -> str` | Prefer `websocket_url`'s host with `ws→http`/`wss→https`. If `ws` scheme is absent, fall back to `base_url`. Raises `ValueError` if both fail. |
+| `derive_base_url` | `(*, websocket_url: str, base_url: str) -> str` | Prefer `websocket_url`'s host with `ws→http`/`wss→https`. If the WebSocket URL is not `ws`/`wss`, fall back to `base_url`. Raises `ValueError` only when both `base_url` is blank and `websocket_url` is not absolute; an absolute non-WS URL with blank `base_url` returns `""`. |
 | `_guess_mime` | `(filename: str, default="application/octet-stream") -> str` | `mimetypes.guess_type` wrapper. |
 | `_is_remote_url` | `(value: str) -> bool` | `True` if scheme is `http` / `https`. |
 | `normalize_outbound_media_reference` | `(value: str) -> str` | Decode Hermes `file://...` wrappers and recover embedded `http(s)://` URLs before outbound media handling. |

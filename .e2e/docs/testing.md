@@ -114,11 +114,11 @@ For `local_start_test.sh`, what happens, in order:
 
 1. Loads `JWT` from `.e2e/.env` (or the file pointed to by
    `ENV_FILE=...`). Adds the `Bearer ` prefix if missing.
-2. `POST`s to `…/v1/agents/connect-codes` with that JWT and
+2. Verifies `.e2e/tmp/hermes_data_base/` exists; bails with a
+   bootstrap hint otherwise.
+3. `POST`s to `…/v1/agents/connect-codes` with that JWT and
    `x-device-id: apifox`, prints the raw envelope, and extracts
    `data.code` (falling back to top-level `code`).
-3. Verifies `.e2e/tmp/hermes_data_base/` exists; bails with a
-   bootstrap hint otherwise.
 4. Wipes `.e2e/tmp/hermes_data/` and copies a fresh tree from the
    baseline. It then removes any preinstalled `plugins/clawchat/` or
    legacy `plugins/hermes-clawchat/` directory inherited from the

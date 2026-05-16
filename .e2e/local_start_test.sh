@@ -24,21 +24,6 @@ case "$JWT" in
     *)         AUTH_HEADER="Bearer $JWT" ;;
 esac
 
-RESPONSE=$(curl -sS --location --request POST 'https://app.clawling.com/v1/agents/connect-codes' \
-    --header 'x-device-id: apifox' \
-    --header "Authorization: $AUTH_HEADER")
-
-echo "connect-codes response: $RESPONSE"
-
-CODE=$(echo "$RESPONSE" | python3 -c "import sys, json; d = json.load(sys.stdin); print(d.get('data', {}).get('code') or d.get('code', ''))")
-
-if [ -z "$CODE" ]; then
-    echo "failed to obtain connect code" >&2
-    exit 1
-fi
-
-echo "connect code: $CODE"
-
 if [ ! -d ./.e2e/tmp/hermes_data_base ]; then
     cat >&2 <<EOF
 missing baseline Hermes data dir: ./.e2e/tmp/hermes_data_base
@@ -57,6 +42,21 @@ config Hermes needs and you can re-run this script.
 EOF
     exit 1
 fi
+
+RESPONSE=$(curl -sS --location --request POST 'https://app.clawling.com/v1/agents/connect-codes' \
+    --header 'x-device-id: apifox' \
+    --header "Authorization: $AUTH_HEADER")
+
+echo "connect-codes response: $RESPONSE"
+
+CODE=$(echo "$RESPONSE" | python3 -c "import sys, json; d = json.load(sys.stdin); print(d.get('data', {}).get('code') or d.get('code', ''))")
+
+if [ -z "$CODE" ]; then
+    echo "failed to obtain connect code" >&2
+    exit 1
+fi
+
+echo "connect code: $CODE"
 
 rm -rf ./.e2e/tmp/hermes_data
 cp -r ./.e2e/tmp/hermes_data_base ./.e2e/tmp/hermes_data

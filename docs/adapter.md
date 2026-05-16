@@ -29,10 +29,10 @@ class _ActiveRun:
     started_order: int
     last_text: str = ""
     reply_to_message_id: str | None = None
-    sequence: int = 0
+    sequence: int = -1
 ```
 
-Tracks an in-flight streaming reply keyed by `message_id`. `last_text` feeds `compute_delta`; `sequence` goes into every `message.add` / `message.done` payload.
+Tracks an in-flight streaming reply keyed by `message_id`. `last_text` feeds `compute_delta`; `sequence` starts at `-1` so the first emitted `message.add` increments to `0`, then goes into every `message.add` / `message.done` payload.
 
 ## Module-level function
 
@@ -45,6 +45,7 @@ Verifies `websockets` is importable and that `platform_config.extra` has non-emp
 ```python
 class ClawChatAdapter(BasePlatformAdapter):
     SUPPORTS_MESSAGE_EDITING = True
+    REQUIRES_EDIT_FINALIZE = True
     MAX_MESSAGE_LENGTH = 0
 ```
 
@@ -84,7 +85,7 @@ class ClawChatAdapter(BasePlatformAdapter):
 | Method | Signature | Notes |
 |---|---|---|
 | `async send` | `(chat_id, content="", reply_to=None, metadata=None, **kwargs) -> SendResult` | Suppresses tool-progress noise according to `show_tool_progress`, filters `<think>` / raw tool blocks according to `show_*_output`, builds fragments, then either emits a single materialized `message.reply` with `wait_for_ack=True` (static mode — non-stream config or media-only/rich interaction) or fire-and-forget `message.created` + `message.add` with the first delta. Registers an `_ActiveRun` for the new `message_id`. |
-| `async edit_message` | `(chat_id, message_id, content) -> SendResult` | Resolve active run; compute delta against `run.last_text`; emit `message.add` with `sequence += 1`. No-op when delta is empty. If a late edit targets a completed run, returns `success=True` without sending frames so Hermes does not fall back to a duplicate send. Returns `success=False, error="no active run for message_id"` only for unknown runs. |
+| `async edit_message` | `(chat_id, message_id, content, finalize=False, **kwargs) -> SendResult` | Resolve active run; compute delta against `run.last_text`; emit `message.add` with `sequence += 1`. No-op when delta is empty. If `finalize=True`, calls `on_run_complete(...)` after any final delta so Hermes edit-finalize lifecycle produces `message.done`. If a late edit targets a completed run, returns `success=True` without sending frames so Hermes does not fall back to a duplicate send. Returns `success=False, error="no active run for message_id"` only for unknown runs. |
 | `async on_run_complete` | `(chat_id, final_text, message_id=None) -> None` | Flush final delta, emit `message.done`, and discard the run from tracking maps. It intentionally does not emit a trailing materialized `message.reply`; static mode is the only path that emits `message.reply`. Duplicate completion for the same completed `message_id` is a no-op. Hermes v0.12+ reaches this through the registered platform adapter lifecycle. |
 | `async send_image` | `(chat_id, image_url, caption=None, reply_to=None, metadata=None) -> SendResult` | Merge `[image_url]` into `metadata["media_urls"]` and delegate to `send`. |
 | `async send_image_file` | `(chat_id, image_path, caption=None, reply_to=None, **kwargs) -> SendResult` | Same shape as `send_image` for local paths. |
