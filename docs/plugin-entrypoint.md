@@ -74,6 +74,19 @@ Without this hook, hermes-agent's interrupt-on-new-message logic treats the WebS
 
 Tool schemas, descriptions, JSON-string result shaping, and handlers live in `clawchat_gateway/plugin_tools.py`; see [plugin-tools.md](./plugin-tools.md). The repo-root `register(ctx)` imports `register_tools` lazily and calls it after platform registration and runtime defaults.
 
+### Skill registration
+
+`_register_skill(ctx)` is a no-op when the host lacks `ctx.register_skill` or the bundled skill file is missing. When available, it registers a Hermes Plugin Bundle skill:
+
+- bare skill name passed to Hermes: `clawchat`
+- qualified skill name exposed by Hermes: `clawchat:clawchat`
+- path: `skills/clawchat/SKILL.md`
+- description: `ClawChat profiles, friends, moments, and media.`
+
+Hermes keeps plugin skills read-only and plugin-owned. They are loaded explicitly by qualified name through `skill_view("clawchat:clawchat")`; they are not copied into `$HERMES_HOME/skills/` and are not listed as global bare skills in the system prompt skill index.
+
+The skill stays concise and defers detailed tool selection to the registered `clawchat_*` tool descriptions and schemas.
+
 ### Native CLI registration
 
 `_register_cli_commands(ctx)` is a no-op on older Hermes builds. When `ctx.register_cli_command` is available, it imports `clawchat_gateway.cli` and registers:
@@ -114,9 +127,10 @@ Order of operations inside `register(ctx)`:
 1. `_register_platform(ctx)` registers `clawchat` through Hermes' platform registry, including `setup_fn=_setup_clawchat_platform`. If the host does not expose `ctx.register_platform`, registration fails with a clear `RuntimeError`.
 2. `_configure_runtime_defaults()` seeds ClawChat defaults in `$HERMES_HOME`.
 3. `clawchat_gateway.plugin_tools.register_tools(ctx)` registers the fourteen account/profile/media/search/moment `clawchat_*` tools.
-4. `_register_cli_commands(ctx)` registers the native `hermes clawchat` CLI command when supported.
-5. `_register_commands(ctx)` registers `/clawchat-activate` when supported.
-6. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.
+4. `_register_skill(ctx)` registers the bundled plugin skill through `ctx.register_skill(...)` when supported.
+5. `_register_cli_commands(ctx)` registers the native `hermes clawchat` CLI command when supported.
+6. `_register_commands(ctx)` registers `/clawchat-activate` when supported.
+7. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard.
 
 ## `clawchat_gateway/__init__.py`
 

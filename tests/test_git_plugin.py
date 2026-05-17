@@ -53,7 +53,7 @@ def _load_root_plugin():
     return module
 
 
-def test_git_plugin_registers_tools_without_skill(monkeypatch, tmp_path):
+def test_git_plugin_registers_tools_and_bundled_skill(monkeypatch, tmp_path):
     module = _load_root_plugin()
     monkeypatch.setattr(module, "_configure_runtime_defaults", lambda: None, raising=False)
     skill = tmp_path / "skills" / "clawchat" / "SKILL.md"
@@ -84,7 +84,10 @@ def test_git_plugin_registers_tools_without_skill(monkeypatch, tmp_path):
     assert ctx.tools["clawchat_upload_avatar_image"]["is_async"] is True
     assert "upload" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
     assert "clawchat_update_account_profile" in ctx.tools["clawchat_upload_avatar_image"]["schema"]["description"]
-    assert ctx.skills == {}
+    assert ctx.skills["clawchat"]["path"] == skill
+    assert ctx.skills["clawchat"]["description"] == (
+        "ClawChat profiles, friends, moments, and media."
+    )
     assert "clawchat-activate" in ctx.commands
 
 

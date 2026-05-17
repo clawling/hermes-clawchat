@@ -331,7 +331,7 @@ def test_search_and_moment_tool_descriptions_match_reviewed_copy(monkeypatch):
     assert "do not use this for top-level comments" in reply
 
 
-def test_plugin_does_not_register_clawchat_skill(monkeypatch, tmp_path):
+def test_plugin_registers_bundled_clawchat_skill(monkeypatch, tmp_path):
     module = _load_plugin_module()
     skill = tmp_path / "skills" / "clawchat" / "SKILL.md"
     skill.parent.mkdir(parents=True)
@@ -341,7 +341,10 @@ def test_plugin_does_not_register_clawchat_skill(monkeypatch, tmp_path):
 
     module.register(ctx)
 
-    assert ctx.skills == {}
+    assert ctx.skills["clawchat"]["path"] == skill
+    assert ctx.skills["clawchat"]["description"] == (
+        "ClawChat profiles, friends, moments, and media."
+    )
 
 
 

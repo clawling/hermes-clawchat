@@ -147,7 +147,7 @@ Verifies reconnect attempt counting, consecutive reconnect counting, and stable-
 
 Imports the repo-root `__init__.py` via a dummy `_Ctx` context and verifies:
 
-- `register(ctx)` adds the fourteen account/profile/media/search/moment ClawChat tools and the `/clawchat-activate` slash command, without registering a bundled skill.
+- `register(ctx)` adds the fourteen account/profile/media/search/moment ClawChat tools, the `/clawchat-activate` slash command, and the bundled ClawChat Plugin Bundle skill through `ctx.register_skill("clawchat", skills/clawchat/SKILL.md, description="ClawChat profiles, friends, moments, and media.")`.
 - Tool handlers in `clawchat_gateway.plugin_tools` accept and echo `task_id`.
 
 ### `tests/test_plugin.py`
@@ -165,7 +165,7 @@ Comprehensive registration / schema / behavior tests for the repo-root `__init__
 - `test_plugin_registers_clawchat_activate_slash_command` — `register(ctx)` exposes `/clawchat-activate` through `ctx.register_command`.
 - `test_plugin_tool_descriptions_forbid_execute_fallbacks` — every tool description includes `"Do not use execute"`.
 - `test_upload_media_tool_description_is_link_only_not_current_chat_delivery` — `clawchat_upload_media_file` description distinguishes "shareable URL" upload vs `MEDIA:/absolute/local/path` for current-chat delivery.
-- `test_plugin_does_not_register_clawchat_skill` — verifies the plugin does not call `ctx.register_skill`, even if a legacy skill file exists.
+- `test_plugin_registers_bundled_clawchat_skill` — verifies the plugin registers the bundled ClawChat Plugin Bundle skill with `ctx.register_skill("clawchat", skills/clawchat/SKILL.md, description="ClawChat profiles, friends, moments, and media.")` and keeps the behavior aligned with Bundle skill semantics.
 - `test_plugin_tool_handlers_return_json_strings_for_hermes_v012` — `handle_clawchat_get_account_profile` returns a JSON string (not a dict) because Hermes v0.12 expects strings; verifies UTF-8 round-trip.
 - `test_plugin_upload_avatar_image_rejects_relative_path` — handler returns a `validation` error envelope for relative paths (without making any API calls).
 - `test_plugin_requires_platform_registry` — `register(ctx)` raises a clear error when the host lacks `ctx.register_platform`.

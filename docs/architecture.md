@@ -22,9 +22,10 @@ The package `clawchat_gateway` is also pip-installable (`pyproject.toml` → `[p
    - `clawchat_update_account_profile` — update nickname, avatar URL, and/or bio.
    - `clawchat_upload_avatar_image` — upload a local avatar image and return a hosted URL.
    - `clawchat_upload_media_file` — upload a local media/file attachment and return a public URL.
-5. `_register_cli_commands(ctx)` exposes `hermes clawchat activate CODE` on Hermes builds that support plugin CLI commands.
-6. `_register_commands(ctx)` exposes `/clawchat-activate CODE` on Hermes builds that support plugin slash commands.
-7. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard (see "Self-echo guard" below).
+5. `_register_skill(ctx)` registers the bundled plugin skill through `ctx.register_skill(...)` when Hermes exposes the skill API; Hermes resolves it by qualified name as `clawchat:clawchat`.
+6. `_register_cli_commands(ctx)` exposes `hermes clawchat activate CODE` on Hermes builds that support plugin CLI commands.
+7. `_register_commands(ctx)` exposes `/clawchat-activate CODE` on Hermes builds that support plugin slash commands.
+8. `ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)` installs the self-echo guard (see "Self-echo guard" below).
 
 ## Runtime data flow
 
@@ -50,6 +51,7 @@ ClawChatAdapter ----send----> ClawChatConnection (WebSocket)  <----> ClawChat se
 ## Key design choices
 
 - **Platform registry only.** Hermes v0.12+ provides `ctx.register_platform(...)`, so ClawChat registers its adapter, validation hooks, auth env vars, and platform prompt without modifying Hermes source.
+- **Bundled plugin skill registration.** `skills/clawchat/SKILL.md` ships with the plugin and is registered through `ctx.register_skill("clawchat", ...)` when available. Hermes exposes it as the plugin-qualified skill `clawchat:clawchat`; it remains plugin-owned/read-only and is not copied into `$HERMES_HOME/skills/`.
 - **`gateway.*` is imported at runtime, stubbed in tests.** Production adapter code imports `gateway.platforms.base.BasePlatformAdapter`; in tests `conftest.py` pre-registers stubs from `tests/fake_hermes.py` so the package can be imported without a real hermes-agent checkout.
 - **WebSocket auth plus challenge response.** Every connection sends `Authorization`, `X-Device-Id`, and the `bearer.<token>` subprotocol during the WebSocket upgrade. The server then sends `connect.challenge`; the adapter answers it with the msghub `ConnectPayload` and waits for `hello-ok` before entering `READY`.
 - **Deterministic WebSocket lifecycle logs.** `ws_log.format_ws_log` renders every canonical `clawchat.ws` line with fixed field order. Optional values render as `-`, and credential material is not passed into log fields.

@@ -186,6 +186,22 @@ def _configure_runtime_defaults() -> None:
         logger.warning("ClawChat could not configure runtime defaults: %s", exc)
 
 
+def _register_skill(ctx) -> None:
+    register_skill = getattr(ctx, "register_skill", None)
+    if not callable(register_skill):
+        return
+
+    skill = _plugin_dir() / "skills" / "clawchat" / "SKILL.md"
+    if not skill.exists():
+        return
+
+    register_skill(
+        "clawchat",
+        skill,
+        description="ClawChat profiles, friends, moments, and media.",
+    )
+
+
 def _platform_value(platform) -> str:
     value = getattr(platform, "value", platform)
     return str(value or "").lower()
@@ -294,6 +310,7 @@ def register(ctx) -> None:
     from clawchat_gateway.plugin_tools import register_tools
 
     register_tools(ctx)
+    _register_skill(ctx)
     _register_cli_commands(ctx)
     _register_commands(ctx)
     ctx.register_hook("pre_gateway_dispatch", _clawchat_pre_gateway_dispatch)

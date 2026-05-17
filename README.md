@@ -19,7 +19,7 @@ Defaults:
 - `HERMES_HOME`: `~/.hermes`
 - plugin source: `$HERMES_HOME/plugins/clawchat`
 
-The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx.register_platform(...)`; no Hermes source patch or Node install shim is needed on v0.12.0+.
+The enabled plugin registers the `clawchat` gateway platform through Hermes `ctx.register_platform(...)` and registers its bundled ClawChat skill through `ctx.register_skill(...)` when supported. This is a Hermes Plugin Bundle skill loaded by qualified name, for example `skill_view("clawchat:clawchat")`; it is not copied into `$HERMES_HOME/skills/` and is not advertised as a global bare `clawchat` skill. No Hermes source patch or Node install shim is needed on v0.12.0+.
 
 ## Tools
 
