@@ -38,6 +38,7 @@ from clawchat_gateway.protocol import (
     build_typing_update_event,
     new_frame_id,
 )
+from clawchat_gateway.storage import get_clawchat_store
 from clawchat_gateway.stream_buffer import compute_delta
 
 logger = logging.getLogger("clawchat_gateway.adapter")
@@ -49,6 +50,7 @@ INBOUND_RATE_WARN_THRESHOLD = 5
 COMPLETED_RUN_CACHE_MAX = 1024
 
 _THINK_BLOCK_RE = re.compile(r"<think\b[^>]*>.*?</think>", re.IGNORECASE | re.DOTALL)
+_THINK_CONTENT_RE = re.compile(r"<think\b[^>]*>(.*?)</think>", re.IGNORECASE | re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think\b[^>]*>.*\Z", re.IGNORECASE | re.DOTALL)
 _TOOL_TAG_BLOCK_RE = re.compile(
     r"<(?:tool|tools|tool_call|tool_result|function_call|function_result)\b[^>]*>"
@@ -145,6 +147,11 @@ class ClawChatAdapter(BasePlatformAdapter):
         self._completed_run_ids: set[str] = set()
         self._completed_run_order: deque[str] = deque()
         self._auth_failed = False
+        try:
+            self._store = get_clawchat_store()
+        except Exception:  # noqa: BLE001
+            self._store = None
+            logger.warning("clawchat adapter database unavailable")
 
     async def connect(self) -> bool:
         await self._connection.start()
@@ -304,6 +311,17 @@ class ClawChatAdapter(BasePlatformAdapter):
             len(inbound.text),
             len(inbound.media_urls),
         )
+        if frame.get("event") in {"message.send", "message.reply"}:
+            self._record_message(
+                kind="message",
+                direction="inbound",
+                event_type=str(frame.get("event") or ""),
+                trace_id=frame.get("trace_id") or frame.get("id"),
+                chat_id=inbound.chat_id,
+                message_id=self._extract_frame_message_id(frame),
+                text=inbound.text,
+                raw=frame,
+            )
         await self._handle_inbound(inbound)
 
     async def _handle_inbound(self, inbound: InboundMessage) -> None:
@@ -415,15 +433,34 @@ class ClawChatAdapter(BasePlatformAdapter):
         )
 
         if self._should_use_static_mode(fragments):
+            frame = build_message_reply_event(
+                chat_id=chat_id,
+                chat_type=chat_type,
+                message_id=message_id,
+                fragments=fragments,
+                reply_to_message_id=reply_to,
+            )
             await self._connection.send_frame(
-                build_message_reply_event(
-                    chat_id=chat_id,
-                    chat_type=chat_type,
-                    message_id=message_id,
-                    fragments=fragments,
-                    reply_to_message_id=reply_to,
-                ),
+                frame,
                 wait_for_ack=True,
+            )
+            self._record_message(
+                kind="message",
+                direction="outbound",
+                event_type="message.reply",
+                trace_id=frame.get("trace_id") or frame.get("id"),
+                chat_id=chat_id,
+                message_id=message_id,
+                text=visible_content,
+                raw=frame,
+            )
+            self._record_thinking_if_present(
+                event_type="message.reply",
+                trace_id=frame.get("trace_id") or frame.get("id"),
+                chat_id=chat_id,
+                message_id=message_id,
+                content=content or "",
+                raw=frame,
             )
             logger.info(
                 "clawchat send static reply queued chat_id=%s message_id=%s fragments=%d",
@@ -570,14 +607,31 @@ class ClawChatAdapter(BasePlatformAdapter):
             )
             run.last_text = full_text
 
-        await self._connection.send_frame(
-            build_message_done_event(
-                chat_id=chat_id,
-                chat_type=run.chat_type,
-                message_id=run.message_id,
-                fragments=await self._build_fragments(run.last_text),
-                sequence=run.sequence,
-            )
+        frame = build_message_done_event(
+            chat_id=chat_id,
+            chat_type=run.chat_type,
+            message_id=run.message_id,
+            fragments=await self._build_fragments(run.last_text),
+            sequence=run.sequence,
+        )
+        await self._connection.send_frame(frame)
+        self._record_message(
+            kind="message",
+            direction="outbound",
+            event_type="message.done",
+            trace_id=frame.get("trace_id") or frame.get("id"),
+            chat_id=chat_id,
+            message_id=run.message_id,
+            text=run.last_text,
+            raw=frame,
+        )
+        self._record_thinking_if_present(
+            event_type="message.done",
+            trace_id=frame.get("trace_id") or frame.get("id"),
+            chat_id=chat_id,
+            message_id=run.message_id,
+            content=final_text or "",
+            raw=frame,
         )
         logger.info(
             "clawchat stream done queued chat_id=%s message_id=%s",
@@ -609,14 +663,23 @@ class ClawChatAdapter(BasePlatformAdapter):
             )
             return
         self._discard_run(run)
-        await self._connection.send_frame(
-            build_message_failed_event(
-                chat_id=chat_id,
-                chat_type=run.chat_type,
-                message_id=run.message_id,
-                sequence=max(run.sequence, 0),
-                reason=error,
-            )
+        frame = build_message_failed_event(
+            chat_id=chat_id,
+            chat_type=run.chat_type,
+            message_id=run.message_id,
+            sequence=max(run.sequence, 0),
+            reason=error,
+        )
+        await self._connection.send_frame(frame)
+        self._record_message(
+            kind="error",
+            direction="outbound",
+            event_type="message.failed",
+            trace_id=frame.get("trace_id") or frame.get("id"),
+            chat_id=chat_id,
+            message_id=run.message_id,
+            text=error,
+            raw=frame,
         )
         logger.info(
             "clawchat stream failed queued chat_id=%s message_id=%s",
@@ -734,6 +797,74 @@ class ClawChatAdapter(BasePlatformAdapter):
         if not lines:
             return False
         return all(_TOOL_PROGRESS_LINE_RE.match(line) for line in lines)
+
+    def _record_message(
+        self,
+        *,
+        kind: str,
+        direction: str,
+        event_type: str,
+        trace_id: Any,
+        chat_id: str | None,
+        message_id: str | None,
+        text: str | None,
+        raw: Any,
+    ) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.insert_message(
+                platform="hermes",
+                account_id="default",
+                kind=kind,
+                direction=direction,
+                event_type=event_type,
+                trace_id=str(trace_id) if trace_id is not None else None,
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                raw=raw,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("clawchat message database persistence failed")
+
+    def _record_thinking_if_present(
+        self,
+        *,
+        event_type: str,
+        trace_id: Any,
+        chat_id: str,
+        message_id: str | None,
+        content: str,
+        raw: Any,
+    ) -> None:
+        if not message_id:
+            return
+        thinking = self._extract_thinking_content(content)
+        if thinking is None:
+            return
+        self._record_message(
+            kind="thinking",
+            direction="outbound",
+            event_type=event_type,
+            trace_id=trace_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            text=thinking,
+            raw=raw,
+        )
+
+    def _extract_thinking_content(self, content: str) -> str | None:
+        parts = [match.strip() for match in _THINK_CONTENT_RE.findall(content) if match.strip()]
+        return "\n\n".join(parts) or None
+
+    def _extract_frame_message_id(self, frame: dict[str, Any]) -> str | None:
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        message = payload.get("message") if isinstance(payload.get("message"), dict) else {}
+        value = payload.get("message_id") or message.get("message_id") or message.get("id")
+        if value is None:
+            value = frame.get("message_id") or frame.get("id")
+        return str(value) if value is not None else None
 
     async def _build_fragments(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -21,6 +22,9 @@ except Exception as exc:
 
 from clawchat_gateway.api_client import DEFAULT_BASE_URL, DEFAULT_WEBSOCKET_URL, ClawChatApiClient
 from clawchat_gateway.restart import schedule_gateway_restart
+from clawchat_gateway.storage import get_clawchat_store
+
+logger = logging.getLogger(__name__)
 
 
 def _load_config() -> tuple[Path, dict[str, Any]]:
@@ -105,12 +109,24 @@ def persist_activation(
 async def activate(code: str, *, base_url: str) -> dict[str, Any]:
     client = ClawChatApiClient(base_url=base_url.rstrip("/"), token="", user_id="")
     result = await client.agents_connect(code=code)
-    return persist_activation(
+    payload = persist_activation(
         access_token=str(result["access_token"]),
         user_id=str(result["agent"]["user_id"]),
         refresh_token=result.get("refresh_token"),
         base_url=base_url,
     )
+    try:
+        get_clawchat_store().upsert_activation(
+            platform="hermes",
+            account_id="default",
+            user_id=str(result["agent"]["user_id"]),
+            access_token=str(result["access_token"]),
+            refresh_token=result.get("refresh_token"),
+            login_method="unknown",
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("clawchat activation database persistence failed")
+    return payload
 
 
 async def activate_and_maybe_restart(
@@ -132,4 +148,3 @@ async def activate_and_maybe_restart(
             "ClawChat activation is saved. Hermes restart has been scheduled in the background."
         )
     return payload
-

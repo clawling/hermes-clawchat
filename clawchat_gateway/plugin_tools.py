@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+
+from clawchat_gateway.storage import get_clawchat_store
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +14,79 @@ def _tool_result(payload: dict) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _account_id_from_kwargs(kw) -> str | None:
+    account_id = kw.get("account_id")
+    if isinstance(account_id, str) and account_id:
+        return account_id
+    return None
+
+
+def _record_tool_call(
+    *,
+    tool_name: str,
+    args: dict,
+    account_id: str | None,
+    result,
+    error: str | None,
+    started_at: int,
+    ended_at: int,
+) -> None:
+    try:
+        get_clawchat_store().record_tool_call(
+            platform="hermes",
+            account_id=account_id or "default",
+            tool_name=tool_name,
+            args=args,
+            result=result,
+            error=error,
+            started_at=started_at,
+            ended_at=ended_at,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("clawchat tool database persistence failed tool_name=%s", tool_name)
+
+
+async def _recorded_tool_call(tool_name: str, args: dict, account_id: str | None, fn):
+    started = int(time.time() * 1000)
+    safe_args = dict(args or {})
+    try:
+        result = await fn()
+    except Exception as exc:
+        ended = int(time.time() * 1000)
+        _record_tool_call(
+            tool_name=tool_name,
+            args=safe_args,
+            account_id=account_id,
+            result=None,
+            error=str(exc),
+            started_at=started,
+            ended_at=ended,
+        )
+        raise
+    ended = int(time.time() * 1000)
+    _record_tool_call(
+        tool_name=tool_name,
+        args=safe_args,
+        account_id=account_id,
+        result=result,
+        error=None,
+        started_at=started,
+        ended_at=ended,
+    )
+    return result
+
+
 async def handle_clawchat_get_account_profile(args, **kw):
     task_id = kw.get("task_id") or "default"
     logger.info("clawchat_get_account_profile start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.get_account_profile()
+    result = await _recorded_tool_call(
+        "clawchat_get_account_profile",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.get_account_profile(),
+    )
     logger.info("clawchat_get_account_profile done task_id=%s", task_id)
     return _tool_result(result)
 
@@ -26,7 +96,12 @@ async def handle_clawchat_get_user_profile(args, **kw):
     logger.info("clawchat_get_user_profile start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.get_user_profile(str(args.get("userId") or ""))
+    result = await _recorded_tool_call(
+        "clawchat_get_user_profile",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.get_user_profile(str(args.get("userId") or "")),
+    )
     logger.info("clawchat_get_user_profile done task_id=%s", task_id)
     return _tool_result(result)
 
@@ -47,9 +122,14 @@ async def handle_clawchat_list_account_friends(args, **kw):
     logger.info("clawchat_list_account_friends start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.list_account_friends(
-        page=_optional_int_arg(args.get("page")),
-        page_size=_optional_int_arg(args.get("pageSize")),
+    result = await _recorded_tool_call(
+        "clawchat_list_account_friends",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.list_account_friends(
+            page=_optional_int_arg(args.get("page")),
+            page_size=_optional_int_arg(args.get("pageSize")),
+        ),
     )
     logger.info("clawchat_list_account_friends done task_id=%s", task_id)
     return _tool_result(result)
@@ -60,9 +140,14 @@ async def handle_clawchat_search_users(args, **kw):
     logger.info("clawchat_search_users start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.search_users(
-        q=args.get("q") if isinstance(args.get("q"), str) else "",
-        limit=_optional_int_arg(args.get("limit")),
+    result = await _recorded_tool_call(
+        "clawchat_search_users",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.search_users(
+            q=args.get("q") if isinstance(args.get("q"), str) else "",
+            limit=_optional_int_arg(args.get("limit")),
+        ),
     )
     logger.info("clawchat_search_users done task_id=%s", task_id)
     return _tool_result(result)
@@ -73,9 +158,14 @@ async def handle_clawchat_list_moments(args, **kw):
     logger.info("clawchat_list_moments start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.list_moments(
-        before=_optional_int_arg(args.get("before")),
-        limit=_optional_int_arg(args.get("limit")),
+    result = await _recorded_tool_call(
+        "clawchat_list_moments",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.list_moments(
+            before=_optional_int_arg(args.get("before")),
+            limit=_optional_int_arg(args.get("limit")),
+        ),
     )
     logger.info("clawchat_list_moments done task_id=%s", task_id)
     return _tool_result(result)
@@ -86,9 +176,14 @@ async def handle_clawchat_create_moment(args, **kw):
     logger.info("clawchat_create_moment start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.create_moment(
-        text=args.get("text") if isinstance(args.get("text"), str) else None,
-        images=args.get("images") if isinstance(args.get("images"), list) else None,
+    result = await _recorded_tool_call(
+        "clawchat_create_moment",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.create_moment(
+            text=args.get("text") if isinstance(args.get("text"), str) else None,
+            images=args.get("images") if isinstance(args.get("images"), list) else None,
+        ),
     )
     logger.info("clawchat_create_moment done task_id=%s", task_id)
     return _tool_result(result)
@@ -99,7 +194,12 @@ async def handle_clawchat_delete_moment(args, **kw):
     logger.info("clawchat_delete_moment start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.delete_moment(_optional_int_arg(args.get("momentId")))
+    result = await _recorded_tool_call(
+        "clawchat_delete_moment",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.delete_moment(_optional_int_arg(args.get("momentId"))),
+    )
     logger.info("clawchat_delete_moment done task_id=%s", task_id)
     return _tool_result(result)
 
@@ -109,9 +209,14 @@ async def handle_clawchat_toggle_moment_reaction(args, **kw):
     logger.info("clawchat_toggle_moment_reaction start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.toggle_moment_reaction(
-        _optional_int_arg(args.get("momentId")),
-        str(args.get("emoji") or ""),
+    result = await _recorded_tool_call(
+        "clawchat_toggle_moment_reaction",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.toggle_moment_reaction(
+            _optional_int_arg(args.get("momentId")),
+            str(args.get("emoji") or ""),
+        ),
     )
     logger.info("clawchat_toggle_moment_reaction done task_id=%s", task_id)
     return _tool_result(result)
@@ -122,9 +227,14 @@ async def handle_clawchat_create_moment_comment(args, **kw):
     logger.info("clawchat_create_moment_comment start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.create_moment_comment(
-        _optional_int_arg(args.get("momentId")),
-        str(args.get("text") or ""),
+    result = await _recorded_tool_call(
+        "clawchat_create_moment_comment",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.create_moment_comment(
+            _optional_int_arg(args.get("momentId")),
+            str(args.get("text") or ""),
+        ),
     )
     logger.info("clawchat_create_moment_comment done task_id=%s", task_id)
     return _tool_result(result)
@@ -135,10 +245,15 @@ async def handle_clawchat_reply_moment_comment(args, **kw):
     logger.info("clawchat_reply_moment_comment start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.reply_moment_comment(
-        _optional_int_arg(args.get("momentId")),
-        _optional_int_arg(args.get("replyToCommentId")),
-        str(args.get("text") or ""),
+    result = await _recorded_tool_call(
+        "clawchat_reply_moment_comment",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.reply_moment_comment(
+            _optional_int_arg(args.get("momentId")),
+            _optional_int_arg(args.get("replyToCommentId")),
+            str(args.get("text") or ""),
+        ),
     )
     logger.info("clawchat_reply_moment_comment done task_id=%s", task_id)
     return _tool_result(result)
@@ -149,9 +264,14 @@ async def handle_clawchat_delete_moment_comment(args, **kw):
     logger.info("clawchat_delete_moment_comment start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.delete_moment_comment(
-        _optional_int_arg(args.get("momentId")),
-        _optional_int_arg(args.get("commentId")),
+    result = await _recorded_tool_call(
+        "clawchat_delete_moment_comment",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.delete_moment_comment(
+            _optional_int_arg(args.get("momentId")),
+            _optional_int_arg(args.get("commentId")),
+        ),
     )
     logger.info("clawchat_delete_moment_comment done task_id=%s", task_id)
     return _tool_result(result)
@@ -162,10 +282,15 @@ async def handle_clawchat_update_account_profile(args, **kw):
     logger.info("clawchat_update_account_profile start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.update_account_profile(
-        nickname=args.get("nickname") if isinstance(args.get("nickname"), str) else None,
-        avatar_url=args.get("avatar_url") if isinstance(args.get("avatar_url"), str) else None,
-        bio=args.get("bio") if isinstance(args.get("bio"), str) else None,
+    result = await _recorded_tool_call(
+        "clawchat_update_account_profile",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.update_account_profile(
+            nickname=args.get("nickname") if isinstance(args.get("nickname"), str) else None,
+            avatar_url=args.get("avatar_url") if isinstance(args.get("avatar_url"), str) else None,
+            bio=args.get("bio") if isinstance(args.get("bio"), str) else None,
+        ),
     )
     logger.info("clawchat_update_account_profile done task_id=%s", task_id)
     return _tool_result(result)
@@ -176,7 +301,12 @@ async def handle_clawchat_upload_avatar_image(args, **kw):
     logger.info("clawchat_upload_avatar_image start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.upload_avatar_image(str(args.get("filePath") or ""))
+    result = await _recorded_tool_call(
+        "clawchat_upload_avatar_image",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.upload_avatar_image(str(args.get("filePath") or "")),
+    )
     logger.info("clawchat_upload_avatar_image done task_id=%s", task_id)
     return _tool_result(result)
 
@@ -186,7 +316,12 @@ async def handle_clawchat_upload_media_file(args, **kw):
     logger.info("clawchat_upload_media_file start task_id=%s", task_id)
     from clawchat_gateway import tools
 
-    result = await tools.upload_media_file(str(args.get("filePath") or ""))
+    result = await _recorded_tool_call(
+        "clawchat_upload_media_file",
+        args,
+        _account_id_from_kwargs(kw),
+        lambda: tools.upload_media_file(str(args.get("filePath") or "")),
+    )
     logger.info("clawchat_upload_media_file done task_id=%s", task_id)
     return _tool_result(result)
 

@@ -27,6 +27,7 @@ from clawchat_gateway.protocol import (
     new_frame_id,
 )
 from clawchat_gateway.device_id import get_device_id
+from clawchat_gateway.storage import get_clawchat_store
 from clawchat_gateway.ws_log import format_ws_log
 from clawchat_gateway.ws_state import ReconnectTracker
 
@@ -97,6 +98,12 @@ class ClawChatConnection:
         self._tracker = ReconnectTracker()
         self._attempt = 0
         self._reconnect_count = 0
+        try:
+            self._store = get_clawchat_store()
+        except Exception:  # noqa: BLE001
+            self._store = None
+            logger.warning("clawchat connection database unavailable")
+        self._connection_row_id: int | None = None
         self._supervisor_task: asyncio.Task[None] | None = None
         self._read_task: asyncio.Task[None] | None = None
         self._hello_wait: asyncio.Future[bool] | None = None
@@ -210,7 +217,7 @@ class ClawChatConnection:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                reconnect_reason = str(exc) or type(exc).__name__
+                reconnect_reason = self._safe_error_text(exc)
                 logger.warning(
                     format_ws_log(
                         event="connection_lost",
@@ -258,6 +265,13 @@ class ClawChatConnection:
         attempt, reconnect_count = self._tracker.next_connect()
         self._attempt = attempt
         self._reconnect_count = reconnect_count
+        self._connection_row_id = self._record_connection(
+            "start_connection",
+            platform="hermes",
+            account_id=self._account_id,
+            attempt=attempt,
+            reconnect_count=reconnect_count,
+        )
         logger.info(
             format_ws_log(
                 event="connect_start",
@@ -274,16 +288,23 @@ class ClawChatConnection:
         )
         loop = asyncio.get_running_loop()
         handshake_started_at = loop.time()
-        ws = await _ws_connect(
-            self._cfg.websocket_url,
-            additional_headers={
-                "Authorization": f"Bearer {self._cfg.token}",
-                "X-Device-Id": get_device_id(),
-            },
-            subprotocols=["clawchat.v1", f"bearer.{self._cfg.token}"],
-            ping_interval=self._cfg.heartbeat_interval_ms / 1000.0,
-            ping_timeout=self._cfg.heartbeat_timeout_ms / 1000.0,
-        )
+        try:
+            ws = await _ws_connect(
+                self._cfg.websocket_url,
+                additional_headers={
+                    "Authorization": f"Bearer {self._cfg.token}",
+                    "X-Device-Id": get_device_id(),
+                },
+                subprotocols=["clawchat.v1", f"bearer.{self._cfg.token}"],
+                ping_interval=self._cfg.heartbeat_interval_ms / 1000.0,
+                ping_timeout=self._cfg.heartbeat_timeout_ms / 1000.0,
+            )
+        except Exception as exc:
+            self._finish_current_connection(
+                ConnectionState.DISCONNECTED.value,
+                error=self._safe_error_text(exc),
+            )
+            raise
         self._ws = ws
         self._pending_connect_id = None
         await self._set_state(ConnectionState.HANDSHAKING)
@@ -298,6 +319,10 @@ class ClawChatConnection:
             if not hello_ok or self._auth_failed:
                 return False
             await self._set_state(ConnectionState.READY)
+            self._record_connection(
+                "mark_connection_ready",
+                self._connection_row_id,
+            )
             self._schedule_stable_ready_reset()
             elapsed_ms = int((loop.time() - handshake_started_at) * 1000)
             logger.info(
@@ -333,6 +358,12 @@ class ClawChatConnection:
                 pass
             self._ws = None
             self._read_task = None
+            if self._auth_failed:
+                self._finish_current_connection(ConnectionState.AUTH_FAILED.value)
+            elif self._stopping:
+                self._finish_current_connection(ConnectionState.CLOSED.value)
+            else:
+                self._finish_current_connection(ConnectionState.DISCONNECTED.value)
         if not self._stopping and not self._auth_failed:
             logger.info(
                 format_ws_log(
@@ -589,6 +620,10 @@ class ClawChatConnection:
             capabilities={"multi_device": True, "device_replay": True},
         )
         await self._ws.send(encode_frame(connect_req))
+        self._record_connection(
+            "mark_connect_sent",
+            self._connection_row_id,
+        )
         logger.info(
             format_ws_log(
                 event="connect_sent",
@@ -612,6 +647,7 @@ class ClawChatConnection:
         if frame.get("event") == "hello-fail":
             payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
             reason = payload.get("reason") if isinstance(payload.get("reason"), str) else None
+            reason = self._sanitize_secret_text(reason)
             frame_trace_id = frame.get("trace_id")
             trace_id_match = bool(
                 self._pending_connect_id and frame_trace_id == self._pending_connect_id
@@ -619,6 +655,10 @@ class ClawChatConnection:
             self._auth_failed = True
             self._stopping = True
             await self._set_state(ConnectionState.AUTH_FAILED)
+            self._finish_current_connection(
+                ConnectionState.AUTH_FAILED.value,
+                error=reason,
+            )
             logger.info(
                 format_ws_log(
                     event="auth_failed",
@@ -991,6 +1031,54 @@ class ClawChatConnection:
         )
         if self._ws is not None:
             await self._ws.close()
+
+    def _record_connection(self, operation: str, *args: Any, **kwargs: Any) -> Any:
+        if self._store is None:
+            return None
+        try:
+            return getattr(self._store, operation)(*args, **kwargs)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "clawchat connection database persistence failed operation=%s",
+                operation,
+            )
+            return None
+
+    def _safe_error_text(self, exc: BaseException) -> str:
+        return self._sanitize_secret_text(str(exc) or type(exc).__name__) or type(exc).__name__
+
+    def _sanitize_secret_text(self, text: str | None) -> str | None:
+        if text is None:
+            return None
+        token = self._cfg.token
+        if token:
+            return text.replace(token, "***")
+        return text
+
+    def _finish_current_connection(
+        self,
+        state: str,
+        *,
+        close_code: int | None = None,
+        close_reason: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        if self._connection_row_id is None:
+            return
+        connection_row_id = self._connection_row_id
+        self._connection_row_id = None
+        kwargs: dict[str, Any] = {"state": state}
+        if close_code is not None:
+            kwargs["close_code"] = close_code
+        if close_reason is not None:
+            kwargs["close_reason"] = close_reason
+        if error is not None:
+            kwargs["error"] = error
+        self._record_connection(
+            "finish_connection",
+            connection_row_id,
+            **kwargs,
+        )
 
     def _schedule_stable_ready_reset(self) -> None:
         self._cancel_stable_ready_reset()
