@@ -1,0 +1,433 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sqlite3
+import stat
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable, TypeVar
+
+logger = logging.getLogger(__name__)
+
+DB_FILENAME = "clawchat.sqlite"
+
+_T = TypeVar("_T")
+
+
+INITIAL_SCHEMA = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS clawchat_messages (
+  id INTEGER PRIMARY KEY,
+  platform TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  trace_id TEXT,
+  chat_id TEXT,
+  message_id TEXT,
+  text TEXT,
+  raw_json TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS activations (
+  platform TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  user_id TEXT,
+  access_token TEXT,
+  refresh_token TEXT,
+  activated_at INTEGER NOT NULL,
+  login_method TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (platform, account_id)
+);
+
+CREATE TABLE IF NOT EXISTS connections (
+  id INTEGER PRIMARY KEY,
+  platform TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  attempt INTEGER,
+  reconnect_count INTEGER,
+  state TEXT NOT NULL,
+  connect_started_at INTEGER,
+  connect_sent_at INTEGER,
+  ready_at INTEGER,
+  disconnected_at INTEGER,
+  close_code INTEGER,
+  close_reason TEXT,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tool_calls (
+  id INTEGER PRIMARY KEY,
+  platform TEXT NOT NULL,
+  account_id TEXT,
+  tool_name TEXT NOT NULL,
+  args_json TEXT,
+  result_json TEXT,
+  error TEXT,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  duration_ms INTEGER,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clawchat_messages_chat_created
+  ON clawchat_messages(chat_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_clawchat_messages_message_id
+  ON clawchat_messages(message_id);
+CREATE INDEX IF NOT EXISTS idx_connections_account_created
+  ON connections(platform, account_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_name_created
+  ON tool_calls(tool_name, created_at);
+"""
+
+MIGRATIONS = [(1, "initial_schema", INITIAL_SCHEMA)]
+
+_store: ClawChatStore | None = None
+_store_lock = threading.Lock()
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def default_db_path() -> Path:
+    return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes") / DB_FILENAME
+
+
+def json_dumps(value: Any) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+class ClawChatStore:
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path is not None else default_db_path()
+        self._initialized = False
+        self._disabled = False
+        self._lock = threading.Lock()
+
+    def initialize(self) -> None:
+        with self._lock:
+            if self._initialized or self._disabled:
+                return
+            try:
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    applied = self._applied_migrations(conn)
+                    for version, name, sql in MIGRATIONS:
+                        if version in applied:
+                            continue
+                        applied_at = _now_ms()
+                        escaped_name = name.replace("'", "''")
+                        conn.executescript(
+                            "BEGIN;\n"
+                            f"{sql}\n"
+                            "INSERT INTO schema_migrations(version, name, applied_at) "
+                            f"VALUES ({version}, '{escaped_name}', {applied_at});\n"
+                            "COMMIT;"
+                        )
+                    self._chmod_private()
+                    self._initialized = True
+                finally:
+                    conn.close()
+            except Exception:  # noqa: BLE001
+                self._disabled = True
+                logger.warning(
+                    "clawchat database initialization failed; disabling writes",
+                    exc_info=True,
+                )
+
+    def upsert_activation(
+        self,
+        *,
+        platform: str,
+        account_id: str,
+        user_id: str | None,
+        access_token: str | None,
+        refresh_token: str | None,
+        activated_at: int | None = None,
+        login_method: str | None = None,
+        updated_at: int | None = None,
+    ) -> None:
+        now = _now_ms()
+        activated = activated_at if activated_at is not None else now
+        updated = updated_at if updated_at is not None else activated
+
+        def write(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                INSERT INTO activations(
+                  platform, account_id, user_id, access_token, refresh_token,
+                  activated_at, login_method, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(platform, account_id) DO UPDATE SET
+                  user_id = excluded.user_id,
+                  access_token = excluded.access_token,
+                  refresh_token = excluded.refresh_token,
+                  activated_at = excluded.activated_at,
+                  login_method = excluded.login_method,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    platform,
+                    account_id,
+                    user_id,
+                    access_token,
+                    refresh_token,
+                    activated,
+                    login_method,
+                    updated,
+                ),
+            )
+
+        self._write("upsert_activation", write)
+
+    def insert_message(
+        self,
+        *,
+        platform: str,
+        account_id: str,
+        kind: str,
+        direction: str,
+        event_type: str,
+        trace_id: str | None = None,
+        chat_id: str | None = None,
+        message_id: str | None = None,
+        text: str | None = None,
+        raw: Any = None,
+        created_at: int | None = None,
+    ) -> int | None:
+        created = created_at if created_at is not None else _now_ms()
+
+        def write(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                """
+                INSERT INTO clawchat_messages(
+                  platform, account_id, kind, direction, event_type, trace_id,
+                  chat_id, message_id, text, raw_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    platform,
+                    account_id,
+                    kind,
+                    direction,
+                    event_type,
+                    trace_id,
+                    chat_id,
+                    message_id,
+                    text,
+                    json_dumps(raw),
+                    created,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+        return self._write("insert_message", write)
+
+    def start_connection(
+        self,
+        *,
+        platform: str,
+        account_id: str,
+        attempt: int | None,
+        reconnect_count: int | None,
+        connect_started_at: int | None = None,
+    ) -> int | None:
+        started = connect_started_at if connect_started_at is not None else _now_ms()
+
+        def write(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                """
+                INSERT INTO connections(
+                  platform, account_id, attempt, reconnect_count, state,
+                  connect_started_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    platform,
+                    account_id,
+                    attempt,
+                    reconnect_count,
+                    "connecting",
+                    started,
+                    started,
+                    started,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+        return self._write("start_connection", write)
+
+    def mark_connect_sent(
+        self,
+        connection_id: int | None,
+        *,
+        connect_sent_at: int | None = None,
+    ) -> None:
+        if connection_id is None:
+            return
+        sent = connect_sent_at if connect_sent_at is not None else _now_ms()
+
+        def write(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                UPDATE connections
+                SET state = ?, connect_sent_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("handshaking", sent, sent, connection_id),
+            )
+
+        self._write("mark_connect_sent", write)
+
+    def mark_connection_ready(
+        self,
+        connection_id: int | None,
+        *,
+        ready_at: int | None = None,
+    ) -> None:
+        if connection_id is None:
+            return
+        ready = ready_at if ready_at is not None else _now_ms()
+
+        def write(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                UPDATE connections
+                SET state = ?, ready_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("ready", ready, ready, connection_id),
+            )
+
+        self._write("mark_connection_ready", write)
+
+    def finish_connection(
+        self,
+        connection_id: int | None,
+        *,
+        state: str,
+        disconnected_at: int | None = None,
+        close_code: int | None = None,
+        close_reason: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        if connection_id is None:
+            return
+        ended = disconnected_at if disconnected_at is not None else _now_ms()
+
+        def write(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                """
+                UPDATE connections
+                SET state = ?, disconnected_at = ?, close_code = ?, close_reason = ?,
+                    error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (state, ended, close_code, close_reason, error, ended, connection_id),
+            )
+
+        self._write("finish_connection", write)
+
+    def record_tool_call(
+        self,
+        *,
+        platform: str,
+        account_id: str | None,
+        tool_name: str,
+        args: Any = None,
+        result: Any = None,
+        error: str | None = None,
+        started_at: int | None = None,
+        ended_at: int | None = None,
+    ) -> int | None:
+        started = started_at if started_at is not None else _now_ms()
+        duration_ms = ended_at - started if ended_at is not None else None
+
+        def write(conn: sqlite3.Connection) -> int:
+            cursor = conn.execute(
+                """
+                INSERT INTO tool_calls(
+                  platform, account_id, tool_name, args_json, result_json, error,
+                  started_at, ended_at, duration_ms, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    platform,
+                    account_id,
+                    tool_name,
+                    json_dumps(args),
+                    json_dumps(result),
+                    error,
+                    started,
+                    ended_at,
+                    duration_ms,
+                    started,
+                ),
+            )
+            return int(cursor.lastrowid)
+
+        return self._write("record_tool_call", write)
+
+    def _applied_migrations(self, conn: sqlite3.Connection) -> set[int]:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        if row is None:
+            return set()
+        return {int(version) for (version,) in conn.execute("SELECT version FROM schema_migrations")}
+
+    def _chmod_private(self) -> None:
+        try:
+            self.db_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            logger.debug("clawchat database chmod failed", exc_info=True)
+
+    def _write(
+        self,
+        operation: str,
+        callback: Callable[[sqlite3.Connection], _T],
+    ) -> _T | None:
+        self.initialize()
+        if self._disabled:
+            return None
+        try:
+            conn = sqlite3.connect(self.db_path)
+            try:
+                result = callback(conn)
+                conn.commit()
+                return result
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "clawchat database write failed operation=%s",
+                operation,
+                exc_info=True,
+            )
+            return None
+
+
+def get_clawchat_store() -> ClawChatStore:
+    global _store
+    with _store_lock:
+        if _store is None:
+            _store = ClawChatStore(default_db_path())
+        return _store
